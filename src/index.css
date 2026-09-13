@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #F9FAF8;
+    color: #1F2937;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+.font-nastaliq {
+  font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', serif;
+  line-height: 2.2;
+}
+
+.font-nastaliq-tight {
+  font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', serif;
+  line-height: 1.8;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .printable-receipt-card {
+    box-shadow: none !important;
+    border: 1px solid #1e293b !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+}

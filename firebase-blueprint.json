@@ -1,0 +1,187 @@
+{
+  "entities": {
+    "Member": {
+      "title": "Member",
+      "description": "Umrah Committee Member record",
+      "type": "object",
+      "properties": {
+        "memberNumber": { "type": "string", "maxLength": 50 },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "fatherName": { "type": "string", "maxLength": 100 },
+        "cnic": { "type": "string", "maxLength": 30 },
+        "mobile": { "type": "string", "maxLength": 30 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
+        "address": { "type": "string", "maxLength": 250 },
+        "joiningDate": { "type": "string", "maxLength": 30 },
+        "planMonths": { "type": "number" },
+        "monthlyInstallment": { "type": "number" },
+        "totalCommitteeAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "dueAmount": { "type": "number" },
+        "advanceAmount": { "type": "number" },
+        "registrationFee": { "type": "number" },
+        "registrationFeeStatus": { "type": "string", "enum": ["Paid", "Unpaid"] },
+        "nomineeName": { "type": "string", "maxLength": 100 },
+        "nomineeRelation": { "type": "string", "maxLength": 50 },
+        "nomineeCnic": { "type": "string", "maxLength": 30 },
+        "nomineeMobile": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["Active", "Completed", "Cancelled", "Refunded", "Archived"] },
+        "notes": { "type": "string", "maxLength": 500 },
+        "memberPhoto": { "type": "string", "maxLength": 500 },
+        "linkedUserId": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["memberNumber", "fullName", "mobile", "planMonths", "monthlyInstallment", "totalCommitteeAmount", "status"]
+    },
+    "Installment": {
+      "title": "Installment",
+      "description": "Monthly committee installment schedule record",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string", "maxLength": 100 },
+        "memberNumber": { "type": "string", "maxLength": 50 },
+        "installmentNumber": { "type": "number" },
+        "dueDate": { "type": "string", "maxLength": 30 },
+        "amount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Upcoming", "Due", "Paid", "Partial", "Advance", "Late"] },
+        "paidDate": { "type": "string", "maxLength": 30 },
+        "paymentMethod": { "type": "string", "maxLength": 50 },
+        "receiptNumber": { "type": "string", "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 250 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["memberId", "installmentNumber", "dueDate", "amount", "status"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment transaction record for manual collection",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string", "maxLength": 100 },
+        "memberNumber": { "type": "string", "maxLength": 50 },
+        "installmentId": { "type": "string", "maxLength": 100 },
+        "installmentNumber": { "type": "number" },
+        "receiptId": { "type": "string", "maxLength": 100 },
+        "receiptNumber": { "type": "string", "maxLength": 50 },
+        "amountReceived": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["Cash", "EasyPaisa", "JazzCash", "Other"] },
+        "paymentDate": { "type": "string", "maxLength": 30 },
+        "referenceNumber": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 250 },
+        "collectedBy": { "type": "string", "maxLength": 100 },
+        "allocationType": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["memberId", "receiptNumber", "amountReceived", "paymentMethod", "paymentDate"]
+    },
+    "Receipt": {
+      "title": "Receipt",
+      "description": "Generated payment receipt for Umrah committee",
+      "type": "object",
+      "properties": {
+        "receiptNumber": { "type": "string", "maxLength": 50 },
+        "memberId": { "type": "string", "maxLength": 100 },
+        "paymentId": { "type": "string", "maxLength": 100 },
+        "installmentNumber": { "type": "number" },
+        "amount": { "type": "number" },
+        "paymentDate": { "type": "string", "maxLength": 30 },
+        "paymentMethod": { "type": "string", "maxLength": 50 },
+        "previousPaidAmount": { "type": "number" },
+        "remainingBalance": { "type": "number" },
+        "advanceAmount": { "type": "number" },
+        "totalCommitteeAmount": { "type": "number" },
+        "generatedBy": { "type": "string", "maxLength": 100 },
+        "verificationStatus": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["receiptNumber", "memberId", "amount", "paymentDate", "verificationStatus"]
+    },
+    "Refund": {
+      "title": "Refund",
+      "description": "Member refund transaction",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string", "maxLength": 100 },
+        "memberNumber": { "type": "string", "maxLength": 50 },
+        "refundAmount": { "type": "number" },
+        "refundDate": { "type": "string", "maxLength": 30 },
+        "reason": { "type": "string", "maxLength": 250 },
+        "approvedBy": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 250 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["memberId", "refundAmount", "refundDate", "reason"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Committee organizational settings",
+      "type": "object",
+      "properties": {
+        "committeeName": { "type": "string", "maxLength": 150 },
+        "supervisedBy": { "type": "string", "maxLength": 150 },
+        "establishedYear": { "type": "string", "maxLength": 10 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 100 },
+        "address": { "type": "string", "maxLength": 250 },
+        "membershipPrefix": { "type": "string", "maxLength": 20 },
+        "receiptPrefix": { "type": "string", "maxLength": 20 },
+        "defaultMonthlyInstallment": { "type": "number" },
+        "defaultDueDay": { "type": "number" },
+        "registrationFee": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 20 },
+        "receiptFooter": { "type": "string", "maxLength": 250 },
+        "reminderText": { "type": "string", "maxLength": 250 },
+        "signatoryName": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Audit trail log entry",
+      "type": "object",
+      "properties": {
+        "user": { "type": "string", "maxLength": 100 },
+        "action": { "type": "string", "maxLength": 100 },
+        "date": { "type": "string", "maxLength": 30 },
+        "time": { "type": "string", "maxLength": 30 },
+        "recordType": { "type": "string", "maxLength": 50 },
+        "recordId": { "type": "string", "maxLength": 100 },
+        "details": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["user", "action", "date", "recordType"]
+    }
+  },
+  "firestore": {
+    "/members/{memberId}": {
+      "schema": "Member",
+      "description": "Collection of all Umrah committee members"
+    },
+    "/installments/{installmentId}": {
+      "schema": "Installment",
+      "description": "Collection of all monthly installments for members"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Collection of recorded manual installment payments"
+    },
+    "/receipts/{receiptId}": {
+      "schema": "Receipt",
+      "description": "Collection of generated receipts for verification and accounting"
+    },
+    "/refunds/{refundId}": {
+      "schema": "Refund",
+      "description": "Collection of member refunds"
+    },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "System settings and organization configuration"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Immutable audit trails for accounting actions"
+    }
+  }
+}

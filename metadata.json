@@ -1,0 +1,6 @@
+{
+  "name": "MZ Umrah Committee Management System",
+  "description": "Monthly installment-based Umrah Committee Accounts Management System with manual collection, automatic receipts, verification, and member ledger.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
