@@ -47,6 +47,20 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     }
   }, [receipt]);
 
+  // Lock background body scroll when receipt modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      const originalTouchAction = document.body.style.touchAction;
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        document.body.style.touchAction = originalTouchAction;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen || !receipt) return null;
 
   const handlePrint = () => {
@@ -84,8 +98,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-300 max-w-3xl w-full my-6 overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-xs overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-300 max-w-3xl w-full my-auto overflow-hidden flex flex-col max-h-[92vh]">
         {/* Top Control Bar (Hidden when printing) */}
         <div className="no-print bg-slate-900 px-6 py-3.5 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-2">

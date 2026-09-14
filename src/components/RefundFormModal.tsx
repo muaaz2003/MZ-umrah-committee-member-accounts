@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   RotateCcw,
   Download,
@@ -97,6 +97,20 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
   // Form paper capture ref
   const formPrintRef = useRef<HTMLDivElement | null>(null);
+
+  // Lock background body scroll when modal is open so only the form scrolls
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      const originalTouchAction = document.body.style.touchAction;
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        document.body.style.touchAction = originalTouchAction;
+      };
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -401,8 +415,8 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
-      <div className="relative bg-slate-100 rounded-3xl shadow-2xl border border-slate-300 w-full max-w-5xl my-2 sm:my-4 overflow-hidden flex flex-col h-[94vh] max-h-[96vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-hidden">
+      <div className="relative bg-slate-100 rounded-3xl shadow-2xl border border-slate-300 w-full max-w-5xl my-auto overflow-hidden flex flex-col h-[94vh] max-h-[96vh]">
         
         {/* Top Control Bar aligned with App's Theme */}
         <div className="bg-[#064E3B] text-white px-3.5 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2.5 shrink-0 border-b border-emerald-900 shadow-sm">
@@ -539,7 +553,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
         )}
 
         {/* Form Container (Scrollable canvas viewport) */}
-        <div className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 bg-slate-200/75 flex justify-center">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-2 sm:p-4 md:p-6 bg-slate-200/75 flex justify-center">
           
           {/* PROFESSIONAL REFUND FORM CARD */}
           <div

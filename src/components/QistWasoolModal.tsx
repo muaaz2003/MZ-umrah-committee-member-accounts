@@ -35,7 +35,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
 }) => {
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
   const [selectedInstallmentId, setSelectedInstallmentId] = useState<string>('');
-  const [amountReceived, setAmountReceived] = useState<number>(5000);
+  const [amountReceived, setAmountReceived] = useState<number | string>(5000);
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [referenceNumber, setReferenceNumber] = useState<string>('');
@@ -51,6 +51,20 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
   const activeInstallments = (initialMember && initialInstallments.length > 0)
     ? initialInstallments
     : [];
+
+  // Lock background body scroll when modal is open so only the form scrolls
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      const originalTouchAction = document.body.style.touchAction;
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        document.body.style.touchAction = originalTouchAction;
+      };
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (initialMember) {
@@ -75,10 +89,12 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
   const selectedInstallment = activeInstallments.find((i) => i.id === selectedInstallmentId);
   const requiredAmount = selectedInstallment ? (selectedInstallment.remainingAmount || selectedInstallment.amount) : 5000;
 
+  const numAmount = Number(amountReceived) || 0;
+
   // Partial or Advance Detection
-  const isPartial = amountReceived > 0 && amountReceived < requiredAmount;
-  const isAdvance = amountReceived > requiredAmount;
-  const excessAmount = isAdvance ? amountReceived - requiredAmount : 0;
+  const isPartial = numAmount > 0 && numAmount < requiredAmount;
+  const isAdvance = numAmount > requiredAmount;
+  const excessAmount = isAdvance ? numAmount - requiredAmount : 0;
 
   if (!isOpen) return null;
 
@@ -96,8 +112,10 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
       return;
     }
 
-    if (amountReceived <= 0) {
-      setErrorMessage('Amount received must be greater than zero.');
+    const cleanAmount = String(amountReceived).replace(/[^0-9]/g, '');
+    const finalAmount = Number(cleanAmount);
+    if (!cleanAmount || isNaN(finalAmount) || finalAmount <= 0) {
+      setErrorMessage('برائے مہربانی وصول شدہ رقم درج کریں۔ (Please enter a valid amount greater than 0)');
       return;
     }
 
@@ -106,7 +124,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
       const result = await recordPayment({
         memberId: activeMember.id,
         installmentId: selectedInstallmentId,
-        amountReceived: Number(amountReceived),
+        amountReceived: finalAmount,
         paymentMethod,
         paymentDate,
         referenceNumber: referenceNumber.trim(),
@@ -126,33 +144,41 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
   };
 
   return (
-    <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-lg w-full overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
-        {/* Modal Header */}
-        <div className="bg-[#064E3B] px-6 sm:px-7 py-5 text-white flex items-center justify-between border-b border-emerald-800">
+    <div 
+      className="no-print fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-hidden"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-200 max-w-lg w-full max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+        {/* Modal Header - Fixed at Top */}
+        <div className="bg-[#064E3B] px-5 sm:px-7 py-4 text-white flex items-center justify-between border-b border-emerald-800 shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold shadow-xs shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold shadow-xs shrink-0">
               <HandCoins className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-black text-base sm:text-lg tracking-wide text-white">
+            <div className="min-w-0">
+              <h3 className="font-black text-base sm:text-lg tracking-wide text-white truncate">
                 قسط وصول کریں (Qist Wasool Karein)
               </h3>
-              <p className="text-xs text-amber-300 font-medium mt-0.5">
+              <p className="text-xs text-amber-300 font-medium mt-0.5 truncate">
                 Record Physical Installment Payment & Issue Official Receipt
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-emerald-200 hover:text-white rounded-xl hover:bg-emerald-800/80 transition-colors cursor-pointer"
+            className="p-2 text-emerald-200 hover:text-white rounded-xl hover:bg-emerald-800/80 transition-colors cursor-pointer shrink-0"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 sm:p-7 space-y-5">
+        {/* Form Body - Only the form content inside scrolls, rest is locked */}
+        <form noValidate onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden min-h-0">
+          <div className="p-5 sm:p-7 space-y-4 sm:space-y-5 overflow-y-auto overscroll-contain flex-1">
           {errorMessage && (
             <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2.5 shadow-xs">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -245,15 +271,40 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
               </label>
               <div className="relative">
                 <input
-                  type="number"
-                  min="1"
-                  step="100"
+                  id="qist-amount-input"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   required
-                  value={amountReceived || ''}
-                  onChange={(e) => setAmountReceived(Number(e.target.value))}
+                  value={amountReceived}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, '');
+                    setAmountReceived(val === '' ? '' : Number(val));
+                  }}
                   className="w-full px-3.5 py-2.5 text-base font-black text-emerald-950 border border-emerald-400 rounded-xl focus:ring-2 focus:ring-emerald-600 bg-emerald-50/50 shadow-xs focus:outline-hidden"
+                  placeholder="5000"
                 />
               </div>
+              {/* Quick Selection Chips */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {[5000, 6000, 7000, 8000, 9000, 10000].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setAmountReceived(amt)}
+                    className={`px-2 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                      numAmount === amt
+                        ? 'bg-amber-400 text-emerald-950 shadow-xs'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    Rs. {amt.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium">
+                5,000 سے لے کر 10,000 روپے تک کوئی بھی رقم درج کی جا سکتی ہے۔
+              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -384,32 +435,33 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
             <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
             <span>فوری رسید جنریٹ ہوگی اور ایڈمن دستخط کے ساتھ پرنٹ کی جا سکے گی۔</span>
           </div>
+        </div>
 
-          {/* Action Buttons */}
-          <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-200/80">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
-            >
-              منسوخ (Cancel)
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-3 bg-amber-400 hover:bg-amber-300 active:scale-98 disabled:bg-amber-200 text-emerald-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2.5 cursor-pointer"
-            >
-              {isSubmitting ? (
-                <span>ریکارڈنگ جاری ہے...</span>
-              ) : (
-                <>
-                  <ReceiptText className="w-4 h-4" />
-                  <span>قسط وصول کریں اور رسید بنائیں</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+        {/* Action Buttons - Fixed & Locked at Bottom */}
+        <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0 shadow-xs">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200/70 transition-colors cursor-pointer"
+          >
+            منسوخ (Cancel)
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="px-5 sm:px-6 py-2.5 sm:py-3 bg-amber-400 hover:bg-amber-300 active:scale-98 disabled:bg-amber-200 text-emerald-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+          >
+            {isSubmitting ? (
+              <span>ریکارڈنگ جاری ہے...</span>
+            ) : (
+              <>
+                <ReceiptText className="w-4 h-4" />
+                <span>قسط وصول کریں اور رسید بنائیں</span>
+              </>
+            )}
+          </button>
+        </div>
+      </form>
       </div>
     </div>
   );

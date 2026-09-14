@@ -38,8 +38,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const [address, setAddress] = useState('');
   const [joiningDate, setJoiningDate] = useState('2027-01-01');
   const [planMonths, setPlanMonths] = useState<24 | 36>(24);
-  const [monthlyInstallment, setMonthlyInstallment] = useState<number>(5000);
-  const [registrationFee, setRegistrationFee] = useState(1000);
+  const [monthlyInstallment, setMonthlyInstallment] = useState<number | string>(5000);
+  const [registrationFee, setRegistrationFee] = useState<number | string>(1000);
   const [registrationFeeStatus, setRegistrationFeeStatus] = useState<'Paid' | 'Unpaid'>('Paid');
   const [nomineeName, setNomineeName] = useState('');
   const [nomineeRelation, setNomineeRelation] = useState('');
@@ -70,9 +70,24 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
     }
   }, [isOpen, existingMembers]);
 
+  // Lock background body scroll when modal is open so only the form scrolls
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      const originalTouchAction = document.body.style.touchAction;
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        document.body.style.touchAction = originalTouchAction;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  const validMonthly = Math.max(5000, Math.min(10000, Number(monthlyInstallment) || 5000));
+  const cleanNum = Number(String(monthlyInstallment).replace(/[^0-9]/g, ''));
+  const validMonthly = isNaN(cleanNum) || cleanNum < 5000 ? 5000 : Math.min(10000, cleanNum);
   const totalAmount = planMonths * validMonthly;
 
   const quickAmounts = [5000, 6000, 7000, 8000, 9000, 10000];
@@ -82,11 +97,18 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
     setErrorMessage('');
 
     if (!fullName.trim()) {
-      setErrorMessage('Please enter member full name.');
+      setErrorMessage('برائے مہربانی ممبر کا پورا نام درج کریں۔ (Please enter member full name)');
       return;
     }
     if (!mobile.trim()) {
-      setErrorMessage('Please enter member mobile number.');
+      setErrorMessage('برائے مہربانی موبائل نمبر درج کریں۔ (Please enter member mobile number)');
+      return;
+    }
+
+    const cleanMonthly = String(monthlyInstallment).replace(/[^0-9]/g, '');
+    const finalMonthly = Number(cleanMonthly);
+    if (!cleanMonthly || isNaN(finalMonthly) || finalMonthly < 5000 || finalMonthly > 10000) {
+      setErrorMessage('ماہانہ قسط کی رقم 5,000 سے 10,000 روپے کے درمیان ہونی چاہیے (5,000 سے 10,000 تک ممبر کی مرضی ہے)۔');
       return;
     }
 
@@ -103,9 +125,9 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           address: address.trim(),
           joiningDate,
           planMonths,
-          monthlyInstallment: validMonthly,
-          totalCommitteeAmount: totalAmount,
-          registrationFee: Number(registrationFee),
+          monthlyInstallment: finalMonthly,
+          totalCommitteeAmount: planMonths * finalMonthly,
+          registrationFee: Number(registrationFee) || 0,
           registrationFeeStatus,
           nomineeName: nomineeName.trim(),
           nomineeRelation: nomineeRelation.trim(),
@@ -128,33 +150,46 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   };
 
   return (
-    <div className="no-print fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden my-8 max-h-[92vh] flex flex-col">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-6 py-4 text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold">
-              <UserPlus className="w-5 h-5" />
+    <div 
+      className="no-print fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-hidden"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 max-w-2xl w-full overflow-hidden flex flex-col h-[100dvh] sm:h-auto sm:max-h-[92vh] my-0 sm:my-auto">
+        {/* Header - Fixed & Sticky on Mobile so it is NEVER cut off */}
+        <div className="bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between shrink-0 shadow-md border-b border-emerald-800/60">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold shrink-0 shadow-xs">
+              <UserPlus className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h3 className="font-extrabold text-base tracking-wide text-white">
-                Member Registration
+            <div className="min-w-0">
+              <h3 className="font-black text-sm sm:text-base tracking-wide text-white truncate">
+                نئی ممبرشپ رجسٹریشن (Member Registration)
               </h3>
-              <p className="text-xs text-amber-300 font-medium">
-                Add New Umrah Committee Member & Auto-Generate Installments
+              <p className="text-[10px] sm:text-xs text-amber-300 font-medium truncate">
+                5,000 تا 10,000 روپے ماہانہ قسط • خودکار اقساط شیڈول
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-emerald-200 hover:text-white rounded-lg hover:bg-emerald-800 transition-colors"
+            className="p-2 text-emerald-200 hover:text-white rounded-xl hover:bg-emerald-800/80 transition-colors shrink-0 ml-2 cursor-pointer active:scale-95"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-5 flex-1">
+        {/* Form Container - Only the inner body scrolls, header and footer are pinned */}
+        <form 
+          id="add-member-form" 
+          noValidate 
+          onSubmit={handleSubmit} 
+          className="flex-1 flex flex-col overflow-hidden min-h-0"
+        >
+          <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4 sm:space-y-5 flex-1">
           {errorMessage && (
             <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -239,19 +274,30 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                       PKR
                     </span>
                     <input
-                      type="number"
-                      min={5000}
-                      max={10000}
-                      step={500}
+                      id="monthly-installment-input"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       required
                       value={monthlyInstallment}
-                      onChange={(e) => setMonthlyInstallment(Number(e.target.value))}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '');
+                        setMonthlyInstallment(val);
+                      }}
+                      onBlur={() => {
+                        const num = Number(monthlyInstallment);
+                        if (!monthlyInstallment || isNaN(num) || num < 5000) {
+                          setMonthlyInstallment(5000);
+                        } else if (num > 10000) {
+                          setMonthlyInstallment(10000);
+                        }
+                      }}
                       className="w-full pl-12 pr-3 py-2 text-sm font-bold bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-emerald-600 focus:outline-hidden"
-                      placeholder="5000 سے 10000 تک"
+                      placeholder="5000"
                     />
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    کم از کم 5,000 اور زیادہ سے زیادہ 10,000 روپے ماہانہ
+                  <p className="text-[11px] text-slate-600 mt-1 font-medium">
+                    ممبر 5,000 سے لے کر 10,000 روپے تک اپنی مرضی سے کوئی بھی رقم منتخب کر سکتے ہیں۔
                   </p>
                 </div>
 
@@ -263,7 +309,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                       type="button"
                       onClick={() => setMonthlyInstallment(amt)}
                       className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                        monthlyInstallment === amt
+                        Number(monthlyInstallment) === amt
                           ? 'bg-amber-400 text-emerald-950 shadow-xs'
                           : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                       }`}
@@ -323,7 +369,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                 <input
                   type="number"
                   value={registrationFee}
-                  onChange={(e) => setRegistrationFee(Number(e.target.value))}
+                  onChange={(e) => setRegistrationFee(e.target.value === '' ? '' : Number(e.target.value))}
                   className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-800"
                 />
               </div>
@@ -522,12 +568,14 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
+          </div>
+
+          {/* Action Buttons - Fixed & Locked at Bottom */}
+          <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0 shadow-xs">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors"
+              className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200/70 transition-colors cursor-pointer"
             >
               Cancel
             </button>
