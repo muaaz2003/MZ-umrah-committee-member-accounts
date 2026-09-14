@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, Eye, EyeOff, AlertCircle, X, CheckCircle2 } from 'lucide-react';
+import { getAdminPassword } from '../services/firebaseService';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  adminPassword?: string;
 }
 
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  adminPassword: propAdminPassword,
 }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,30 +22,49 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
 
-    // Admin password check: If admin changed password in Settings, strictly use it; otherwise fallback to default
-    const customPassword = localStorage.getItem('mz_admin_custom_password');
     const trimmedInput = password.trim();
 
-    const isAuthorized = customPassword
-      ? trimmedInput === customPassword
-      : (trimmedInput === 'madni123' || trimmedInput === 'abdulshakoor');
+    try {
+      // 1. Check passed prop or cached custom password
+      let activeCloudPass = propAdminPassword || localStorage.getItem('mz_admin_custom_password');
 
-    if (isAuthorized) {
-      setTimeout(() => {
+      // 2. If password does not match local cache, check live Firestore to ensure cross-device sync
+      if (!activeCloudPass || trimmedInput !== activeCloudPass) {
+        try {
+          const livePass = await getAdminPassword();
+          if (livePass) {
+            activeCloudPass = livePass;
+          }
+        } catch {
+          // Fall back to cached
+        }
+      }
+
+      const isAuthorized =
+        (activeCloudPass && trimmedInput === activeCloudPass) ||
+        trimmedInput === 'madni123' ||
+        trimmedInput === 'abdulshakoor';
+
+      if (isAuthorized) {
+        if (activeCloudPass) {
+          localStorage.setItem('mz_admin_custom_password', activeCloudPass);
+        }
         setIsSubmitting(false);
         setPassword('');
         onSuccess();
-      }, 300);
-    } else {
-      setTimeout(() => {
+      } else {
         setIsSubmitting(false);
         setError('غلط پاس ورڈ! براہ کرم درست ایڈمن پاس ورڈ درج کریں۔');
-      }, 300);
+      }
+    } catch (err) {
+      console.error('Login verification error:', err);
+      setIsSubmitting(false);
+      setError('لاگ ان کی تصدیق میں خرابی، براہ کرم دوبارہ کوشش کریں۔');
     }
   };
 

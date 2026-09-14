@@ -134,7 +134,8 @@
         "currency": { "type": "string", "maxLength": 20 },
         "receiptFooter": { "type": "string", "maxLength": 250 },
         "reminderText": { "type": "string", "maxLength": 250 },
-        "signatoryName": { "type": "string", "maxLength": 100 }
+        "signatoryName": { "type": "string", "maxLength": 100 },
+        "adminPassword": { "type": "string", "maxLength": 100 }
       }
     },
     "AuditLog": {

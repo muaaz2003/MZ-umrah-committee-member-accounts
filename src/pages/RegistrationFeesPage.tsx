@@ -14,11 +14,13 @@ import { updateMemberRegistrationFeeStatus } from '../services/firebaseService';
 interface RegistrationFeesPageProps {
   members: Member[];
   onRefresh: () => void;
+  onToggleFeeStatus?: (memberId: string, nextStatus: 'Paid' | 'Unpaid') => void;
 }
 
 export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
   members,
   onRefresh,
+  onToggleFeeStatus,
 }) => {
   const [filter, setFilter] = useState<'all' | 'Paid' | 'Unpaid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,6 +48,17 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
 
   const handleToggleStatus = async (member: Member) => {
     const nextStatus = member.registrationFeeStatus === 'Paid' ? 'Unpaid' : 'Paid';
+    if (onToggleFeeStatus) {
+      // Optimistic update
+      setUpdatingId(member.id);
+      try {
+        await onToggleFeeStatus(member.id, nextStatus);
+      } finally {
+        setUpdatingId(null);
+      }
+      return;
+    }
+
     try {
       setUpdatingId(member.id);
       await updateMemberRegistrationFeeStatus(member.id, nextStatus);

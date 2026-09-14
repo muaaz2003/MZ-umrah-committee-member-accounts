@@ -83,10 +83,11 @@ export const DEFAULT_SETTINGS: CommitteeSettings = {
   receiptFooter: 'Supervised by Abdul Shakoor Madni (M.Z.A Welfare Pakistan). Established 2019. May Allah accept your holy pilgrimage.',
   reminderText: 'Dear Member, please deposit your monthly Umrah committee installment before the 10th of this month.',
   signatoryName: 'Abdul Shakoor Madni (Admin)',
+  adminPassword: 'madni123',
 };
 
 // -------------------------------------------------------------
-// SETTINGS SERVICE
+// SETTINGS SERVICE & CLOUD ADMIN PASSWORD
 // -------------------------------------------------------------
 export async function getSettings(): Promise<CommitteeSettings> {
   const path = 'settings';
@@ -94,7 +95,11 @@ export async function getSettings(): Promise<CommitteeSettings> {
     const docRef = doc(db, path, 'general');
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return { id: snap.id, ...(snap.data() as CommitteeSettings) };
+      const data = snap.data() as CommitteeSettings;
+      if (data.adminPassword) {
+        localStorage.setItem('mz_admin_custom_password', data.adminPassword);
+      }
+      return { id: snap.id, ...DEFAULT_SETTINGS, ...data };
     }
     // Set default settings
     await setDoc(docRef, DEFAULT_SETTINGS);
@@ -108,9 +113,46 @@ export async function updateSettings(settings: Partial<CommitteeSettings>, userE
   const path = 'settings';
   try {
     const docRef = doc(db, path, 'general');
-    await updateDoc(docRef, { ...settings, updatedAt: new Date().toISOString() });
+    await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
+    if (settings.adminPassword) {
+      localStorage.setItem('mz_admin_custom_password', settings.adminPassword);
+    }
     await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_SETTINGS', 'Settings', 'general', 'Updated committee general settings');
   } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function getAdminPassword(): Promise<string> {
+  const path = 'settings';
+  try {
+    const docRef = doc(db, path, 'general');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data() as CommitteeSettings;
+      if (data.adminPassword) {
+        localStorage.setItem('mz_admin_custom_password', data.adminPassword);
+        return data.adminPassword;
+      }
+    }
+    const cached = localStorage.getItem('mz_admin_custom_password');
+    return cached || 'madni123';
+  } catch (error) {
+    console.warn('Could not fetch cloud admin password, using local cache:', error);
+    return localStorage.getItem('mz_admin_custom_password') || 'madni123';
+  }
+}
+
+export async function updateAdminPassword(newPassword: string, userEmail: string = 'admin'): Promise<void> {
+  const path = 'settings';
+  const trimmed = newPassword.trim();
+  try {
+    const docRef = doc(db, path, 'general');
+    await setDoc(docRef, { adminPassword: trimmed, updatedAt: new Date().toISOString() }, { merge: true });
+    localStorage.setItem('mz_admin_custom_password', trimmed);
+    await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_PASSWORD', 'Settings', 'general', 'Admin password updated in cloud database');
+  } catch (error) {
+    localStorage.setItem('mz_admin_custom_password', trimmed);
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }

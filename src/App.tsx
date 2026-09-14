@@ -22,6 +22,7 @@ import {
   getMemberById,
   getMemberInstallments,
   seedInitialDemoDataIfEmpty,
+  updateMemberRegistrationFeeStatus,
 } from './services/firebaseService';
 import { calculateFinancialSummary, isInstallmentOverdue } from './utils/calculations';
 import { Header } from './components/Header';
@@ -121,11 +122,14 @@ export function App() {
     }
   }, []);
 
-  // Fetch all initial data from Firestore
-  const loadAllData = async () => {
+  // Fetch data from Firestore.
+  // showSpinner = true ONLY on the initial app mount. Subsequent updates refresh silently in background.
+  const loadAllData = async (showSpinner: boolean = false) => {
     try {
-      setLoading(true);
-      await seedInitialDemoDataIfEmpty();
+      if (showSpinner) {
+        setLoading(true);
+        await seedInitialDemoDataIfEmpty();
+      }
       const [
         membersData,
         paymentsData,
@@ -154,13 +158,33 @@ export function App() {
     } catch (err) {
       console.error('Error loading Firestore data:', err);
     } finally {
-      setLoading(false);
+      if (showSpinner) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadAllData();
+    loadAllData(true);
   }, []);
+
+  // Instant optimistic toggle for Registration Fee (Unpaid <-> Paid)
+  const handleToggleMemberRegistrationFee = async (memberId: string, nextStatus: 'Paid' | 'Unpaid') => {
+    // 1. Instant optimistic state update: 0ms UI delay, no spinner, no full-screen reload!
+    setMembers((prev) =>
+      prev.map((m) => (m.id === memberId ? { ...m, registrationFeeStatus: nextStatus } : m))
+    );
+
+    // 2. Persist to Firestore in background
+    try {
+      await updateMemberRegistrationFeeStatus(memberId, nextStatus);
+      // Silent refresh without spinner
+      loadAllData(false);
+    } catch (err) {
+      console.error('Failed to update registration fee in Firestore:', err);
+      loadAllData(false);
+    }
+  };
 
   // Calculated Financial Summary
   const summary = calculateFinancialSummary(members, payments, refunds);
@@ -225,8 +249,8 @@ export function App() {
     setIsQistModalOpen(false);
     setActiveReceipt(receipt);
     setIsReceiptModalOpen(true);
-    // Refresh Firestore data in background
-    loadAllData();
+    // Refresh Firestore data silently in background WITHOUT full-page spinner
+    loadAllData(false);
   };
 
   // On member created successfully - Instant UI response
@@ -235,8 +259,8 @@ export function App() {
     setMembers((prev) => [newMember, ...prev]);
     setSelectedMemberId(newMember.id);
     setCurrentPage('profile');
-    // Refresh Firestore data in background
-    loadAllData();
+    // Refresh Firestore data silently in background
+    loadAllData(false);
   };
 
   // Admin Login and Logout Handlers (Abdul Shakoor Madni)
@@ -302,8 +326,8 @@ export function App() {
         onAdminLogout={handleAdminLogout}
       />
 
-      {/* Main Content Area */}
-      <div className={`${isAdminLoggedIn ? 'lg:pl-64' : ''} flex-1 flex flex-col`}>
+      {/* Main Content Area: lg:pl-64 ensures desktop layout is never hidden behind sidebar */}
+      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
         {/* Top Header */}
         <Header
           currentUser={currentUser}
@@ -479,7 +503,11 @@ export function App() {
             />
           ) : currentPage === 'registration-fees' ? (
             /* Registration Fees Ledger */
-            <RegistrationFeesPage members={members} onRefresh={loadAllData} />
+            <RegistrationFeesPage
+              members={members}
+              onRefresh={() => loadAllData(false)}
+              onToggleFeeStatus={handleToggleMemberRegistrationFee}
+            />
           ) : currentPage === 'reports' ? (
             /* Reports & Export */
             <ReportsPage
@@ -539,6 +567,7 @@ export function App() {
         isOpen={isAdminLoginModalOpen}
         onClose={() => setIsAdminLoginModalOpen(false)}
         onSuccess={handleAdminLoginSuccess}
+        adminPassword={settings.adminPassword}
       />
     </div>
   );

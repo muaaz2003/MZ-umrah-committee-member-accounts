@@ -176,6 +176,7 @@ export interface CommitteeSettings {
   receiptFooter: string;
   reminderText: string;
   signatoryName: string;
+  adminPassword?: string;
 }
 
 export interface AuditLog {
