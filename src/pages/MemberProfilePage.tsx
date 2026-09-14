@@ -251,7 +251,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                   }`}
                 >
                   <User className="w-4 h-4" />
-                  <span>Nominee Info</span>
+                  <span>کفیل / ضامن (Kafeel Info)</span>
                 </button>
 
                 {refunds.length > 0 && (
@@ -408,28 +408,29 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
               </div>
             )}
 
-            {/* Tab 3: Nominee Details */}
+            {/* Tab 3: Kafeel / Guarantor Details */}
             {activeTab === 'nominee' && (
               <div className="p-6 max-w-lg">
                 <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 space-y-3 text-xs">
-                  <h4 className="font-bold text-gray-700 uppercase tracking-wider text-[11px]">
-                    Nominee / Legal Beneficiary Information
+                  <h4 className="font-bold text-gray-700 uppercase tracking-wider text-[11px] flex items-center justify-between">
+                    <span>کفیل / ضامن کی تفصیلات</span>
+                    <span className="font-sans text-gray-400 font-normal">(Kafeel / Guarantor Information)</span>
                   </h4>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Nominee Name</span>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">کفیل کا نام (Name)</span>
                       <span className="font-bold text-gray-900 text-sm">{member.nomineeName || 'Not specified'}</span>
                     </div>
                     <div>
-                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Relationship</span>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">رشتہ / تعلق (Relation)</span>
                       <span className="font-bold text-gray-900 text-sm">{member.nomineeRelation || '—'}</span>
                     </div>
                     <div>
-                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Nominee CNIC</span>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">کفیل کا CNIC</span>
                       <span className="font-mono font-medium text-gray-800">{member.nomineeCnic || '—'}</span>
                     </div>
                     <div>
-                      <span className="text-gray-400 block text-[10px] uppercase font-bold">Nominee Mobile</span>
+                      <span className="text-gray-400 block text-[10px] uppercase font-bold">کفیل کا موبائل</span>
                       <span className="font-medium text-gray-800">{member.nomineeMobile || '—'}</span>
                     </div>
                   </div>

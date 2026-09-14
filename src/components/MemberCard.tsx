@@ -71,13 +71,26 @@ export const MemberCard: React.FC<MemberCardProps> = ({
         </div>
 
         {/* Member Name and Father Name */}
-        <div>
-          <h3 className="text-base font-bold text-white tracking-wide">
-            {member.fullName}
-          </h3>
-          <p className="text-xs text-emerald-100/70 font-medium mt-0.5">
-            Father: {member.fatherName || '—'}
-          </p>
+        <div className="flex items-center gap-3">
+          {member.memberPhoto ? (
+            <img
+              src={member.memberPhoto}
+              alt={member.fullName}
+              className="w-11 h-11 rounded-full object-cover border-2 border-amber-400 shrink-0 shadow-xs"
+            />
+          ) : (
+            <div className="w-11 h-11 rounded-full bg-emerald-800/80 border border-emerald-700/60 flex items-center justify-center shrink-0 text-amber-300 font-bold text-sm shadow-xs">
+              {member.fullName ? member.fullName.charAt(0).toUpperCase() : <User className="w-5 h-5" />}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-bold text-white tracking-wide truncate">
+              {member.fullName}
+            </h3>
+            <p className="text-xs text-emerald-100/70 font-medium mt-0.5 truncate">
+              Father: {member.fatherName || '—'}
+            </p>
+          </div>
         </div>
 
         {/* Contact info and joined date */}

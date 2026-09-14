@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   UserPlus,
@@ -9,6 +9,11 @@ import {
   CheckCircle2,
   AlertCircle,
   ShieldAlert,
+  Camera,
+  Upload,
+  Trash2,
+  FileCheck2,
+  ShieldCheck,
 } from 'lucide-react';
 import { Member, MemberStatus } from '../types';
 import { getNextMembershipNumber, createMember } from '../services/firebaseService';
@@ -40,13 +45,16 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const [planMonths, setPlanMonths] = useState<24 | 36>(24);
   const [monthlyInstallment, setMonthlyInstallment] = useState<number | string>(5000);
   const [registrationFee, setRegistrationFee] = useState<number | string>(1000);
-  const [registrationFeeStatus, setRegistrationFeeStatus] = useState<'Paid' | 'Unpaid'>('Paid');
   const [nomineeName, setNomineeName] = useState('');
   const [nomineeRelation, setNomineeRelation] = useState('');
   const [nomineeCnic, setNomineeCnic] = useState('');
   const [nomineeMobile, setNomineeMobile] = useState('');
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<MemberStatus>('Active');
+  const [memberPhoto, setMemberPhoto] = useState<string>('');
+  const [memberAgreement, setMemberAgreement] = useState(true);
+  const [guarantorAgreement, setGuarantorAgreement] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -90,7 +98,36 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const validMonthly = isNaN(cleanNum) || cleanNum < 5000 ? 5000 : Math.min(10000, cleanNum);
   const totalAmount = planMonths * validMonthly;
 
-  const quickAmounts = [5000, 6000, 7000, 8000, 9000, 10000];
+  const quickAmounts = [5000, 8000, 10000];
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessage('تصویر کا سائز 5MB سے کم ہونا چاہیے۔ (Photo size must be under 5MB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMemberPhoto(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessage('تصویر کا سائز 5MB سے کم ہونا چاہیے۔ (Photo size must be under 5MB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMemberPhoto(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,6 +149,16 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
       return;
     }
 
+    if (!memberAgreement) {
+      setErrorMessage('برائے مہربانی ممبر کے عہد نامہ کی توثیق کریں۔ (Please accept the member undertaking)');
+      return;
+    }
+
+    if (!guarantorAgreement) {
+      setErrorMessage('برائے مہربانی کفیل / ضامن کے عہد نامہ کی توثیق کریں۔ (Please accept the guarantor undertaking)');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const newMember = await createMember(
@@ -128,13 +175,14 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           monthlyInstallment: finalMonthly,
           totalCommitteeAmount: planMonths * finalMonthly,
           registrationFee: Number(registrationFee) || 0,
-          registrationFeeStatus,
+          registrationFeeStatus: (Number(registrationFee) > 0 ? 'Paid' : 'Unpaid'),
           nomineeName: nomineeName.trim(),
           nomineeRelation: nomineeRelation.trim(),
           nomineeCnic: nomineeCnic.trim(),
           nomineeMobile: nomineeMobile.trim(),
           status,
           notes: notes.trim(),
+          memberPhoto: memberPhoto || undefined,
         },
         currentUserEmail
       );
@@ -157,25 +205,18 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
       }}
     >
       <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 max-w-2xl w-full overflow-hidden flex flex-col h-[100dvh] sm:h-auto sm:max-h-[92vh] my-0 sm:my-auto">
-        {/* Header - Fixed & Sticky on Mobile so it is NEVER cut off */}
-        <div className="bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-3.5 sm:py-4 text-white flex items-center justify-between shrink-0 shadow-md border-b border-emerald-800/60">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold shrink-0 shadow-xs">
-              <UserPlus className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-black text-sm sm:text-base tracking-wide text-white truncate">
-                نئی ممبرشپ رجسٹریشن (Member Registration)
-              </h3>
-              <p className="text-[10px] sm:text-xs text-amber-300 font-medium truncate">
-                5,000 تا 10,000 روپے ماہانہ قسط • خودکار اقساط شیڈول
-              </p>
-            </div>
+        {/* Header - Centered Large Heading with no sub-paragraph */}
+        <div className="relative bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-4 text-white flex items-center justify-center shrink-0 shadow-md border-b border-emerald-800/60">
+          <div className="text-center px-8" dir="rtl">
+            <h3 className="font-black text-base sm:text-xl md:text-2xl tracking-wide text-white flex items-center justify-center flex-wrap gap-2">
+              <span>نئی ممبرشپ رجسٹریشن</span>{' '}
+              <bdi dir="ltr" className="text-amber-300 font-bold text-sm sm:text-lg font-sans">(New Member Registration)</bdi>
+            </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-emerald-200 hover:text-white rounded-xl hover:bg-emerald-800/80 transition-colors shrink-0 ml-2 cursor-pointer active:scale-95"
+            className="absolute left-3 sm:left-4 p-2 text-emerald-200 hover:text-white rounded-xl hover:bg-emerald-800/80 transition-colors shrink-0 cursor-pointer active:scale-95"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -191,66 +232,143 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         >
           <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4 sm:space-y-5 flex-1">
           {errorMessage && (
-            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2 text-right" dir="rtl">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{errorMessage}</span>
             </div>
           )}
 
-          {/* Section 1: Membership & Plan Selection */}
+          {/* Section 1: Member Photo & Committee Plan Selection */}
           <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider">
-                1. کمیٹی پلان اور ممبرشپ (Plan & Installment Calculation)
-              </h4>
-              <span className="text-[11px] font-bold text-amber-800 bg-amber-100/80 px-2.5 py-0.5 rounded-md">
-                آغاز: 01 جنوری 2027 (مقررہ تاریخ: ہر ماہ کی 10)
-              </span>
+            {/* Upload Picture Component (Replaces the removed heading & badge) */}
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-dashed border-emerald-200 hover:border-emerald-500 transition-all shadow-2xs">
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-2 text-right" dir="rtl">
+                <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <Camera className="w-4 h-4 text-emerald-700" />
+                  <span>تصویر اپلوڈ کریں</span>{' '}
+                  <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Upload Member Photo)</bdi>
+                </label>
+                {memberPhoto && (
+                  <button
+                    type="button"
+                    onClick={() => setMemberPhoto('')}
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>تصویر ہٹائیں (Remove Photo)</span>
+                  </button>
+                )}
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-3 sm:gap-4 p-2.5 sm:p-3 rounded-xl bg-emerald-50/60 hover:bg-emerald-50 border border-emerald-100 cursor-pointer transition-all group"
+                dir="rtl"
+              >
+                {/* Avatar Preview */}
+                <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-white border-2 border-emerald-200 overflow-hidden shrink-0 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                  {memberPhoto ? (
+                    <img
+                      src={memberPhoto}
+                      alt="Member Preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-emerald-700">
+                      <Camera className="w-6 h-6 text-emerald-700 group-hover:scale-110 transition-transform" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0 text-right">
+                  {memberPhoto ? (
+                    <div>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>تصویر کامیابی سے منتخب ہوچکی ہے</span>
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        تصویر تبدیل کرنے کے لیے یہاں کلک کریں۔
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs sm:text-sm font-bold text-emerald-950 group-hover:text-emerald-700 transition-colors">
+                        ممبر کی تصویر اپلوڈ کرنے کے لیے کلک کریں
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        فائل کو ڈریگ اینڈ ڈراپ بھی کر سکتے ہیں (JPG, PNG - زیادہ سے زیادہ 5MB)
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="shrink-0">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-800 group-hover:bg-emerald-900 text-white rounded-xl shadow-2xs transition-all">
+                    <Upload className="w-3.5 h-3.5 text-amber-300" />
+                    <span>{memberPhoto ? 'تبدیل کریں' : 'براؤز کریں'}</span>
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  ممبرشپ نمبر (Membership No.)
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">ممبرشپ نمبر *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Membership No.)</bdi>
                 </label>
                 <input
                   type="text"
                   required
                   value={memberNumber}
                   onChange={(e) => setMemberNumber(e.target.value)}
-                  className="w-full px-3 py-2 text-sm font-mono font-bold bg-white border border-slate-300 rounded-lg text-emerald-950 focus:ring-2 focus:ring-emerald-600 focus:outline-hidden"
+                  className="w-full px-3.5 py-2.5 text-sm font-mono font-bold bg-white border border-slate-300 rounded-xl text-emerald-950 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
+                  dir="ltr"
+                  placeholder="MZ-001"
                 />
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  کمیٹی پلان منتخب کریں (24 یا 36 ماہ) *
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">کمیٹی پلان منتخب کریں (24 یا 36 ماہ) *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Select Committee Plan)</bdi>
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setPlanMonths(24)}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border text-center flex flex-col items-center justify-center cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border text-center flex flex-col items-center justify-center cursor-pointer ${
                       planMonths === 24
                         ? 'bg-emerald-900 text-white border-emerald-900 shadow-xs ring-2 ring-emerald-600/30'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     }`}
                   >
                     <span>24 ماہ پلان (2 سال)</span>
-                    <span className="text-[10px] opacity-80 mt-0.5">24 Months Plan</span>
+                    <span className="text-[10px] opacity-80 mt-0.5 font-sans">24 Months Plan</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setPlanMonths(36)}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border text-center flex flex-col items-center justify-center cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border text-center flex flex-col items-center justify-center cursor-pointer ${
                       planMonths === 36
                         ? 'bg-emerald-900 text-white border-emerald-900 shadow-xs ring-2 ring-emerald-600/30'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     }`}
                   >
                     <span>36 ماہ پلان (3 سال)</span>
-                    <span className="text-[10px] opacity-80 mt-0.5">36 Months Plan</span>
+                    <span className="text-[10px] opacity-80 mt-0.5 font-sans">36 Months Plan</span>
                   </button>
                 </div>
               </div>
@@ -258,19 +376,20 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
             {/* Monthly Installment: Min 5,000 to Max 10,000 */}
             <div className="space-y-2 pt-1 border-t border-slate-200/80">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  ماہانہ قسط کی رقم (Monthly Installment: Rs. 5,000 — 10,000) *
+              <div className="flex items-center justify-between text-right" dir="rtl">
+                <label className="block text-xs font-bold text-slate-800 tracking-wide">
+                  <span className="text-slate-900">ماہانہ قسط کی رقم *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Monthly Installment: Rs. 5,000 — 10,000)</bdi>
                 </label>
-                <span className="text-xs font-mono font-bold text-emerald-800">
-                  {formatPKR(validMonthly)} / ماہ
+                <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200" dir="ltr">
+                  {formatPKR(validMonthly)} / Month
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                 <div>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
                       PKR
                     </span>
                     <input
@@ -292,17 +411,17 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                           setMonthlyInstallment(10000);
                         }
                       }}
-                      className="w-full pl-12 pr-3 py-2 text-sm font-bold bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-emerald-600 focus:outline-hidden"
+                      className="w-full pl-12 pr-3.5 py-2.5 text-sm font-bold bg-white border border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
                       placeholder="5000"
                     />
                   </div>
-                  <p className="text-[11px] text-slate-600 mt-1 font-medium">
-                    ممبر 5,000 سے لے کر 10,000 روپے تک اپنی مرضی سے کوئی بھی رقم منتخب کر سکتے ہیں۔
+                  <p className="text-[11px] text-slate-600 mt-1 font-medium text-right" dir="rtl">
+                    5,000 سے لے کر 10,000 روپے تک کوئی بھی رقم درج کریں۔
                   </p>
                 </div>
 
                 {/* Quick Selection Chips */}
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5 justify-start sm:justify-end">
                   {quickAmounts.map((amt) => (
                     <button
                       key={amt}
@@ -314,131 +433,167 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                           : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      {amt.toLocaleString()}
+                      Rs. {amt.toLocaleString()}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* Real-time Dynamic Calculation Preview Card */}
-            <div className="p-3.5 bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 text-white rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-              <div>
-                <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider block">
-                  کل کمیٹی رقم (Total Committee Calculation)
-                </span>
-                <span className="text-xl font-black text-amber-400 tracking-tight">
-                  {formatPKR(totalAmount)}
-                </span>
-                <p className="text-[11px] text-emerald-200 mt-0.5">
-                  حساب: {planMonths} اقساط × {formatPKR(validMonthly)} ماہانہ
+            {/* Real-time Dynamic Calculation Banner Boxes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Banner Left Box: Total Committee Amount */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-emerald-950 to-emerald-900 border border-emerald-800 text-white flex flex-col justify-between space-y-2 text-right shadow-xs" dir="rtl">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-amber-300">
+                    <span>کل کمیٹی رقم</span>{' '}
+                    <bdi dir="ltr" className="text-[11px] font-sans text-amber-200 font-semibold">(Total Committee Amount)</bdi>
+                  </span>
+                  <span className="text-[10px] font-bold bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-400/30 font-mono" dir="ltr">
+                    {planMonths} Months
+                  </span>
+                </div>
+                <div className="my-0.5">
+                  <span className="text-2xl sm:text-3xl font-black text-amber-400 font-mono tracking-tight" dir="ltr">
+                    {formatPKR(totalAmount)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-200 font-medium">
+                  <span>حساب: {planMonths} اقساط × {formatPKR(validMonthly)} ماہانہ</span>{' '}
+                  <bdi dir="ltr" className="text-[10px] text-emerald-300 font-sans">({planMonths} installments)</bdi>
                 </p>
               </div>
 
-              <div className="sm:text-right border-t sm:border-t-0 sm:border-l border-emerald-800 pt-2 sm:pt-0 sm:pl-4 space-y-0.5">
-                <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider block">
-                  کمیٹی شیڈول و مقررہ تاریخ
-                </span>
-                <p className="text-xs font-bold text-white">
-                  01 جنوری 2027 سے آغاز
-                </p>
-                <p className="text-[11px] text-amber-300 font-semibold">
-                  ہر ماہ کی 10 تاریخ تک ادائیگی لازم ہے (ورنہ Overdue)
+              {/* Banner Right Box: Schedule & Due Date */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-emerald-900 to-emerald-950 border border-emerald-800 text-white flex flex-col justify-between space-y-2 text-right shadow-xs" dir="rtl">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-emerald-200">
+                    <span>کمیٹی شیڈول و مقررہ تاریخ</span>{' '}
+                    <bdi dir="ltr" className="text-[11px] font-sans text-emerald-300 font-semibold">(Schedule & Due Date)</bdi>
+                  </span>
+                  <span className="text-[10px] font-bold bg-emerald-800/80 text-emerald-200 px-2 py-0.5 rounded-md border border-emerald-700 font-mono" dir="ltr">
+                    10th Monthly
+                  </span>
+                </div>
+                <div className="my-0.5 space-y-0.5">
+                  <p className="text-sm font-bold text-amber-300">
+                    <span>ہر ماہ کی 10 تاریخ تک ادائیگی لازمی ہے</span>{' '}
+                    <bdi dir="ltr" className="text-xs font-normal text-amber-200 font-sans">(Due by 10th)</bdi>
+                  </p>
+                </div>
+                <p className="text-[10px] text-emerald-300/80 font-medium">
+                  10 تاریخ کے بعد قسط واجب الادا (Overdue) شمار ہوگی
                 </p>
               </div>
             </div>
 
+            {/* Dates & Fees Section */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  تاریخ شمولیت (Joining Date) *
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">تاریخ شمولیت *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Joining Date)</bdi>
                 </label>
                 <input
                   type="date"
                   required
                   value={joiningDate}
                   onChange={(e) => setJoiningDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-800"
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-800 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  رجسٹریشن فیس (Registration Fee)
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">رجسٹریشن فیس</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Registration Fee)</bdi>
                 </label>
                 <input
                   type="number"
                   value={registrationFee}
                   onChange={(e) => setRegistrationFee(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-800"
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-800 font-mono font-bold focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
+                  placeholder="0"
+                  dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  فیس ادائیگی کی کیفیت
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">فیس ادائیگی کی کیفیت</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Fee Payment Status)</bdi>
                 </label>
                 <select
                   value={registrationFeeStatus}
                   onChange={(e) => setRegistrationFeeStatus(e.target.value as 'Paid' | 'Unpaid')}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg text-slate-800 font-semibold"
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-800 font-semibold focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
+                  dir="rtl"
                 >
-                  <option value="Paid">Paid (ادا شدہ)</option>
-                  <option value="Unpaid">Unpaid (غیر ادا شدہ)</option>
+                  <option value="Paid">ادا شدہ (Paid)</option>
+                  <option value="Unpaid">غیر ادا شدہ (Unpaid)</option>
                 </select>
               </div>
             </div>
           </div>
 
           {/* Section 2: Personal Information */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider">
-              2. Member Personal Details
+          <div className="space-y-3 pt-1">
+            <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider text-right" dir="rtl">
+              <span>2. ممبر کی ذاتی معلومات</span>{' '}
+              <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Member Personal Details)</bdi>
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Full Name *
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">مکمل نام *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Full Name)</bdi>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Hafiz Muhammad Usman"
+                  placeholder="مثلاً: حافظ محمد عثمان (e.g. Hafiz Muhammad Usman)"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="auto"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Father's Name
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">والد کا نام</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Father's Name)</bdi>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Muhammad Rafiq"
+                  placeholder="مثلاً: محمد رفیق (e.g. Muhammad Rafiq)"
                   value={fatherName}
                   onChange={(e) => setFatherName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="auto"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  CNIC (National ID)
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">قومی شناختی کارڈ نمبر</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(CNIC / National ID)</bdi>
                 </label>
                 <input
                   type="text"
                   placeholder="42101-XXXXXXX-X"
                   value={cnic}
                   onChange={(e) => setCnic(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600"
+                  className="w-full px-3.5 py-2.5 text-sm font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Mobile Number *
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">موبائل نمبر *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Mobile Number)</bdi>
                 </label>
                 <input
                   type="text"
@@ -446,152 +601,230 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                   placeholder="0300-1234567"
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600"
+                  className="w-full px-3.5 py-2.5 text-sm font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  WhatsApp Number
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">واٹس ایپ نمبر</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(WhatsApp Number)</bdi>
                 </label>
                 <input
                   type="text"
                   placeholder="0300-1234567"
                   value={whatsapp}
                   onChange={(e) => setWhatsapp(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-600"
+                  className="w-full px-3.5 py-2.5 text-sm font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Member Status
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">ممبرشپ کی کیفیت</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Member Status)</bdi>
                 </label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as MemberStatus)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
+                  dir="rtl"
                 >
-                  <option value="Active">Active</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Cancelled">Cancelled</option>
-                  <option value="Refunded">Refunded</option>
+                  <option value="Active">فعال (Active)</option>
+                  <option value="Completed">مکمل شدہ (Completed)</option>
+                  <option value="Cancelled">منسوخ شدہ (Cancelled)</option>
+                  <option value="Refunded">رقم واپس (Refunded)</option>
                 </select>
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Residential Address
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">رہائشی پتہ</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Residential Address)</bdi>
                 </label>
                 <input
                   type="text"
-                  placeholder="Flat/House, Street, Area, City"
+                  placeholder="مکان/فلیٹ نمبر، گلی، علاقہ، شہر (House/Flat, Street, Area, City)"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="auto"
                 />
               </div>
             </div>
           </div>
 
-          {/* Section 3: Nominee Details */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider">
-              3. Nominee / Next of Kin
+          {/* Member Undertaking Section (عہد نامہ برائے ممبر) */}
+          <div className="bg-emerald-50/70 border border-emerald-200/90 p-4 rounded-2xl space-y-2.5 text-right shadow-2xs" dir="rtl">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                <FileCheck2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>عہد نامہ برائے ممبر</span>{' '}
+                <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Member Undertaking)</bdi>
+              </h4>
+              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                اقرار نامہ ممبر
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-emerald-950 leading-relaxed font-medium bg-white/90 p-3.5 rounded-xl border border-emerald-100 shadow-2xs">
+              ”میں اقرار کرتاہوں کہ اس فارم کو بغور پڑھااوراس فارم  میں جوکچھ تحریرکی ہے سب کچھ درست ہے ، ان شاء اللہ ہرماہ کی واجب الادارقم پابندی سے اداکرونگا،اور اس کمیٹی کامقصدکوپوراکرتے ہوئے شکایت کا موقع نہیں دونگا۔“
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer select-none pt-0.5">
+              <input
+                type="checkbox"
+                required
+                checked={memberAgreement}
+                onChange={(e) => setMemberAgreement(e.target.checked)}
+                className="w-4 h-4 text-emerald-700 border-slate-300 rounded focus:ring-emerald-600 cursor-pointer"
+              />
+              <span className="text-xs font-bold text-emerald-900">
+                <span>میں ممبر کی حیثیت سے اس عہد نامے کا اقرار اور تصدیق کرتا ہوں</span>{' '}
+                <bdi dir="ltr" className="text-[10px] text-slate-500 font-sans font-normal">(I accept and confirm this undertaking)</bdi>
+              </span>
+            </label>
+          </div>
+
+          {/* Section 3: Kafeel Details (کفیل کی تفصیلات) */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3.5 pt-1">
+            <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider text-right" dir="rtl">
+              <span>3. کفیل کی تفصیلات</span>{' '}
+              <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Kafeel / Guarantor Details)</bdi>
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Nominee Name
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">کفیل کا نام</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Kafeel Name)</bdi>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Abdul Rehman"
+                  placeholder="مثلاً: عبدالرحمٰن (e.g. Abdul Rehman)"
                   value={nomineeName}
                   onChange={(e) => setNomineeName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="auto"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Relationship
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">رشتہ / تعلق</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Relationship with Member)</bdi>
                 </label>
                 <input
                   type="text"
-                  placeholder="Brother / Son / Spouse / Father"
+                  placeholder="بھائی / بیٹا / شوہر / والد (Brother / Son / Father)"
                   value={nomineeRelation}
                   onChange={(e) => setNomineeRelation(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="auto"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Nominee CNIC
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">کفیل کا شناختی کارڈ</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Kafeel CNIC)</bdi>
                 </label>
                 <input
                   type="text"
                   placeholder="42101-XXXXXXX-X"
                   value={nomineeCnic}
                   onChange={(e) => setNomineeCnic(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"
+                  className="w-full px-3.5 py-2.5 text-sm font-mono bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="ltr"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Nominee Mobile
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">کفیل کا موبائل نمبر</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Kafeel Mobile)</bdi>
                 </label>
                 <input
                   type="text"
                   placeholder="03XX-XXXXXXX"
                   value={nomineeMobile}
                   onChange={(e) => setNomineeMobile(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg"
+                  className="w-full px-3.5 py-2.5 text-sm font-mono bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="ltr"
                 />
               </div>
             </div>
+
+            {/* Guarantor / Kafeel Undertaking (عہد نامہ برائے ضامن / کفیل) */}
+            <div className="bg-amber-50/80 border border-amber-200/90 p-3.5 sm:p-4 rounded-2xl space-y-2.5 text-right mt-3 shadow-2xs" dir="rtl">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h4 className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>عہد نامہ برائے ضامن / کفیل</span>{' '}
+                  <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Guarantor / Kafeel Undertaking)</bdi>
+                </h4>
+                <span className="text-[10px] font-bold text-amber-900 bg-amber-100/90 px-2.5 py-0.5 rounded-md border border-amber-200">
+                  ضمانت نامہ
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-900 leading-relaxed font-medium bg-white/90 p-3.5 rounded-xl border border-amber-100 shadow-2xs">
+                ”میں اقرار کرتا  /کرتی ہوں کہ ممبرکوبحیثیت رشتہ دار جانتا/جانتی ہوں ،اورمکمل طور پر ممبرکی ضمانت لیتا/لیتی ہوں کہ انشاءاللہ ممبر  کسی بھی قسم کی کوئی شکایت کاموقع نہیں دیگا/دیگی“
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer select-none pt-0.5">
+                <input
+                  type="checkbox"
+                  required
+                  checked={guarantorAgreement}
+                  onChange={(e) => setGuarantorAgreement(e.target.checked)}
+                  className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-900">
+                  <span>میں بحیثیت کفیل / ضامن اس عہد نامے اور ضمانت کی مکمل توثیق کرتا / کرتی ہوں</span>{' '}
+                  <bdi dir="ltr" className="text-[10px] text-slate-500 font-sans font-normal">(Guarantor confirmation)</bdi>
+                </span>
+              </label>
+            </div>
           </div>
 
-          {/* Notes */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-              Internal Committee Notes
+          {/* Section 4: Notes */}
+          <div className="pt-1">
+            <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+              <span className="text-slate-900">کمیٹی کے اندرونی نوٹس و ہدایات</span>{' '}
+              <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Internal Committee Notes)</bdi>
             </label>
             <textarea
               rows={2}
-              placeholder="Any special remarks or references..."
+              placeholder="کوئی خاص نوٹ، حوالہ یا ہدایات درج کریں... (Special remarks or references)"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+              className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+              dir="auto"
             />
           </div>
 
           </div>
 
           {/* Action Buttons - Fixed & Locked at Bottom */}
-          <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0 shadow-xs">
+          <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0 shadow-xs" dir="rtl">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 bg-emerald-800 hover:bg-emerald-900 active:scale-98 disabled:bg-emerald-400 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+            >
+              {isSubmitting ? (
+                <span>رجسٹریشن جاری ہے... (Registering...)</span>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-amber-300" />
+                  <span>نیا ممبر رجسٹر کریں ({planMonths} ماہ اقساط)</span>
+                </>
+              )}
+            </button>
             <button
               type="button"
               onClick={onClose}
               className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200/70 transition-colors cursor-pointer"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-400 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
-            >
-              {isSubmitting ? (
-                <span>Registering & Generating Schedule...</span>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-amber-300" />
-                  <span>Register Member ({planMonths} Installments)</span>
-                </>
-              )}
+              منسوخ (Cancel)
             </button>
           </div>
         </form>

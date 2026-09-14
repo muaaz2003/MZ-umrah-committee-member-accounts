@@ -18,6 +18,10 @@
   line-height: 1.8;
 }
 
+.font-urdu {
+  font-family: 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+}
+
 @media print {
   body {
     background: #ffffff !important;
