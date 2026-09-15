@@ -209,8 +209,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         <div className="relative bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-4 text-white flex items-center justify-center shrink-0 shadow-md border-b border-emerald-800/60">
           <div className="text-center px-8" dir="rtl">
             <h3 className="font-black text-base sm:text-xl md:text-2xl tracking-wide text-white flex items-center justify-center flex-wrap gap-2">
-              <span>نئی ممبرشپ رجسٹریشن</span>{' '}
-              <bdi dir="ltr" className="text-amber-300 font-bold text-sm sm:text-lg font-sans">(New Member Registration)</bdi>
+              <span>نئی ممبر رجسٹریشن فارم</span>{' '}
+              <bdi dir="ltr" className="text-amber-300 font-bold text-sm sm:text-lg font-sans">(New Member Registration Form)</bdi>
             </h3>
           </div>
           <button
@@ -240,7 +240,16 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
           {/* Section 1: Member Photo & Committee Plan Selection */}
           <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
-            {/* Upload Picture Component (Replaces the removed heading & badge) */}
+            {/* Section 1 Main Heading */}
+            <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5 mb-1" dir="rtl">
+              <h4 className="text-base sm:text-lg font-black text-emerald-950 tracking-wide flex items-center gap-2">
+                <span className="w-2.5 h-5 bg-emerald-700 rounded-full inline-block"></span>
+                <span>1. کمیٹی پلان اور فیس کی تفصیلات</span>{' '}
+                <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Committee Plan & Fee Details)</bdi>
+              </h4>
+            </div>
+
+            {/* Upload Picture Component */}
             <div className="bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-dashed border-emerald-200 hover:border-emerald-500 transition-all shadow-2xs">
               <div className="flex items-center justify-between flex-wrap gap-2 mb-2 text-right" dir="rtl">
                 <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -374,69 +383,81 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
               </div>
             </div>
 
-            {/* Monthly Installment: Min 5,000 to Max 10,000 */}
-            <div className="space-y-2 pt-1 border-t border-slate-200/80">
+            {/* Monthly Installment: 5,000 / 8,000 / 10,000 */}
+            <div className="space-y-2.5 pt-1 border-t border-slate-200/80">
               <div className="flex items-center justify-between text-right" dir="rtl">
                 <label className="block text-xs font-bold text-slate-800 tracking-wide">
-                  <span className="text-slate-900">ماہانہ قسط کی رقم *</span>{' '}
-                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Monthly Installment: Rs. 5,000 — 10,000)</bdi>
+                  <span className="text-slate-900">ماہانہ قسط کی رقم منتخب کریں *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Select Monthly Installment: 5K, 8K, 10K)</bdi>
                 </label>
                 <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200" dir="ltr">
                   {formatPKR(validMonthly)} / Month
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                <div>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                      PKR
-                    </span>
-                    <input
-                      id="monthly-installment-input"
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      required
-                      value={monthlyInstallment}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/[^0-9]/g, '');
-                        setMonthlyInstallment(val);
-                      }}
-                      onBlur={() => {
-                        const num = Number(monthlyInstallment);
-                        if (!monthlyInstallment || isNaN(num) || num < 5000) {
-                          setMonthlyInstallment(5000);
-                        } else if (num > 10000) {
-                          setMonthlyInstallment(10000);
-                        }
-                      }}
-                      className="w-full pl-12 pr-3.5 py-2.5 text-sm font-bold bg-white border border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
-                      placeholder="5000"
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-600 mt-1 font-medium text-right" dir="rtl">
-                    5,000 سے لے کر 10,000 روپے تک کوئی بھی رقم درج کریں۔
-                  </p>
-                </div>
-
-                {/* Quick Selection Chips */}
-                <div className="flex flex-wrap gap-1.5 justify-start sm:justify-end">
-                  {quickAmounts.map((amt) => (
+              {/* 3 Prominent Selection Options: 5,000, 8,000, 10,000 */}
+              <div className="grid grid-cols-3 gap-2.5">
+                {[5000, 8000, 10000].map((amt) => {
+                  const isSelected = Number(monthlyInstallment) === amt;
+                  return (
                     <button
                       key={amt}
                       type="button"
                       onClick={() => setMonthlyInstallment(amt)}
-                      className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                        Number(monthlyInstallment) === amt
-                          ? 'bg-amber-400 text-emerald-950 shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      className={`py-2.5 px-2 rounded-xl font-bold transition-all border text-center flex flex-col items-center justify-center cursor-pointer relative ${
+                        isSelected
+                          ? 'bg-emerald-900 text-white border-emerald-900 shadow-md ring-2 ring-amber-400'
+                          : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-50 hover:border-emerald-300'
                       }`}
                     >
-                      Rs. {amt.toLocaleString()}
+                      {isSelected && (
+                        <span className="absolute -top-1.5 -right-1.5 bg-amber-400 text-emerald-950 text-[9px] font-black px-1.5 py-0.2 rounded-full shadow-2xs">
+                          منتخب
+                        </span>
+                      )}
+                      <span className={`text-xs sm:text-sm font-black font-mono ${isSelected ? 'text-amber-300' : 'text-slate-900'}`}>
+                        Rs. {amt.toLocaleString()}
+                      </span>
+                      <span className={`text-[10px] sm:text-[11px] font-medium mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-slate-500'}`}>
+                        {amt === 5000 ? '5 ہزار ماہانہ' : amt === 8000 ? '8 ہزار ماہانہ' : '10 ہزار ماہانہ'}
+                      </span>
                     </button>
-                  ))}
+                  );
+                })}
+              </div>
+
+              {/* Custom amount input field */}
+              <div className="flex items-center gap-2.5 pt-1">
+                <div className="relative flex-1">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    PKR
+                  </span>
+                  <input
+                    id="monthly-installment-input"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    required
+                    value={monthlyInstallment}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setMonthlyInstallment(val);
+                    }}
+                    onBlur={() => {
+                      const num = Number(monthlyInstallment);
+                      if (!monthlyInstallment || isNaN(num) || num < 5000) {
+                        setMonthlyInstallment(5000);
+                      } else if (num > 10000) {
+                        setMonthlyInstallment(10000);
+                      }
+                    }}
+                    className="w-full pl-12 pr-3.5 py-2 text-sm font-bold bg-white border border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
+                    placeholder="یا رقم خود درج کریں (5,000 تا 10,000)"
+                  />
                 </div>
+                <span className="text-[11px] text-slate-500 font-medium shrink-0 text-right" dir="rtl">
+                  (5,000 تا 10,000 کے درمیان)
+                </span>
               </div>
             </div>
 
@@ -488,7 +509,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             </div>
 
             {/* Dates & Fees Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
                   <span className="text-slate-900">تاریخ شمولیت *</span>{' '}
@@ -518,31 +539,18 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                   dir="ltr"
                 />
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
-                  <span className="text-slate-900">فیس ادائیگی کی کیفیت</span>{' '}
-                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Fee Payment Status)</bdi>
-                </label>
-                <select
-                  value={registrationFeeStatus}
-                  onChange={(e) => setRegistrationFeeStatus(e.target.value as 'Paid' | 'Unpaid')}
-                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-800 font-semibold focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
-                  dir="rtl"
-                >
-                  <option value="Paid">ادا شدہ (Paid)</option>
-                  <option value="Unpaid">غیر ادا شدہ (Unpaid)</option>
-                </select>
-              </div>
             </div>
           </div>
 
           {/* Section 2: Personal Information */}
-          <div className="space-y-3 pt-1">
-            <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider text-right" dir="rtl">
-              <span>2. ممبر کی ذاتی معلومات</span>{' '}
-              <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Member Personal Details)</bdi>
-            </h4>
+          <div className="space-y-3.5 pt-2">
+            <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5 mb-1" dir="rtl">
+              <h4 className="text-base sm:text-lg font-black text-emerald-950 tracking-wide flex items-center gap-2">
+                <span className="w-2.5 h-5 bg-emerald-700 rounded-full inline-block"></span>
+                <span>2. ممبر کی ذاتی معلومات</span>{' '}
+                <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Member Personal Details)</bdi>
+              </h4>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
@@ -657,14 +665,14 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           </div>
 
           {/* Member Undertaking Section (عہد نامہ برائے ممبر) */}
-          <div className="bg-emerald-50/70 border border-emerald-200/90 p-4 rounded-2xl space-y-2.5 text-right shadow-2xs" dir="rtl">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                <FileCheck2 className="w-4 h-4 text-emerald-700 shrink-0" />
+          <div className="bg-emerald-50/70 border border-emerald-200/90 p-4 sm:p-5 rounded-2xl space-y-3 text-right shadow-2xs" dir="rtl">
+            <div className="flex items-center justify-between gap-2 flex-wrap border-b border-emerald-200/80 pb-2.5">
+              <h4 className="text-base sm:text-lg font-black text-emerald-950 flex items-center gap-2">
+                <FileCheck2 className="w-5 h-5 text-emerald-700 shrink-0" />
                 <span>عہد نامہ برائے ممبر</span>{' '}
-                <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Member Undertaking)</bdi>
+                <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Member Undertaking)</bdi>
               </h4>
-              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-0.5 rounded-md border border-emerald-200">
+              <span className="text-xs font-bold text-emerald-800 bg-emerald-100/90 px-3 py-1 rounded-lg border border-emerald-200">
                 اقرار نامہ ممبر
               </span>
             </div>
@@ -687,11 +695,14 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           </div>
 
           {/* Section 3: Kafeel Details (کفیل کی تفصیلات) */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3.5 pt-1">
-            <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider text-right" dir="rtl">
-              <span>3. کفیل کی تفصیلات</span>{' '}
-              <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Kafeel / Guarantor Details)</bdi>
-            </h4>
+          <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-3.5 pt-2">
+            <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5 mb-1" dir="rtl">
+              <h4 className="text-base sm:text-lg font-black text-emerald-950 tracking-wide flex items-center gap-2">
+                <span className="w-2.5 h-5 bg-emerald-700 rounded-full inline-block"></span>
+                <span>3. کفیل کی تفصیلات</span>{' '}
+                <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Kafeel / Guarantor Details)</bdi>
+              </h4>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
@@ -755,14 +766,14 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             </div>
 
             {/* Guarantor / Kafeel Undertaking (عہد نامہ برائے ضامن / کفیل) */}
-            <div className="bg-amber-50/80 border border-amber-200/90 p-3.5 sm:p-4 rounded-2xl space-y-2.5 text-right mt-3 shadow-2xs" dir="rtl">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h4 className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+            <div className="bg-amber-50/80 border border-amber-200/90 p-4 rounded-2xl space-y-3 text-right mt-3 shadow-2xs" dir="rtl">
+              <div className="flex items-center justify-between gap-2 flex-wrap border-b border-amber-200/80 pb-2.5">
+                <h4 className="text-base sm:text-lg font-black text-amber-950 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0" />
                   <span>عہد نامہ برائے ضامن / کفیل</span>{' '}
-                  <bdi dir="ltr" className="text-slate-500 font-sans text-[11px] font-semibold">(Guarantor / Kafeel Undertaking)</bdi>
+                  <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Guarantor / Kafeel Undertaking)</bdi>
                 </h4>
-                <span className="text-[10px] font-bold text-amber-900 bg-amber-100/90 px-2.5 py-0.5 rounded-md border border-amber-200">
+                <span className="text-xs font-bold text-amber-900 bg-amber-100/90 px-3 py-1 rounded-lg border border-amber-200">
                   ضمانت نامہ
                 </span>
               </div>
@@ -786,11 +797,14 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           </div>
 
           {/* Section 4: Notes */}
-          <div className="pt-1">
-            <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
-              <span className="text-slate-900">کمیٹی کے اندرونی نوٹس و ہدایات</span>{' '}
-              <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Internal Committee Notes)</bdi>
-            </label>
+          <div className="pt-2">
+            <div className="flex items-center justify-between border-b border-slate-200/90 pb-2 mb-2" dir="rtl">
+              <h4 className="text-base sm:text-lg font-black text-emerald-950 tracking-wide flex items-center gap-2">
+                <span className="w-2.5 h-5 bg-emerald-700 rounded-full inline-block"></span>
+                <span>4. کمیٹی کے اندرونی نوٹس و ہدایات</span>{' '}
+                <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Internal Notes)</bdi>
+              </h4>
+            </div>
             <textarea
               rows={2}
               placeholder="کوئی خاص نوٹ، حوالہ یا ہدایات درج کریں... (Special remarks or references)"
