@@ -10,16 +10,31 @@
 
 .font-nastaliq {
   font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', serif;
-  line-height: 2.2;
+  line-height: 1.85;
 }
 
 .font-nastaliq-tight {
   font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', serif;
-  line-height: 1.8;
+  line-height: 1.45;
+}
+
+#pdf-voucher-container {
+  height: auto !important;
+  overflow: visible !important;
+  box-sizing: border-box;
+}
+
+#pdf-voucher-container input,
+#pdf-voucher-container textarea {
+  line-height: 1.25;
 }
 
 .font-urdu {
-  font-family: 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+}
+
+.font-naskh {
+  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
 }
 
 @media print {

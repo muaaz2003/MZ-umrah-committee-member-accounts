@@ -125,11 +125,12 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
       <div className="bg-[#064E3B] rounded-3xl p-6 sm:p-10 text-white shadow-sm relative overflow-hidden">
         <div className="relative z-10 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold px-3 py-1 bg-amber-500 text-emerald-950 rounded-full uppercase tracking-wider">
-                عوامی ممبر پورٹل (Public Portal)
+            <div className="flex items-center gap-2.5" dir="rtl">
+              <span className="text-xs font-bold px-3 py-1 bg-amber-400 text-emerald-950 rounded-full flex items-center gap-1.5 shadow-2xs font-sans">
+                <span className="font-urdu">عوامی ممبر پورٹل</span>
+                <span dir="ltr" className="text-[10px] font-extrabold font-sans uppercase tracking-wider">(PUBLIC PORTAL)</span>
               </span>
-              <span className="text-xs text-emerald-200/80">ایم زیڈ عمرہ کمیٹی پاکستان</span>
+              <span className="text-xs text-emerald-200/90 font-medium font-urdu">ایم زیڈ عمرہ کمیٹی پاکستان</span>
             </div>
 
             {!isAdminLoggedIn ? (
@@ -148,34 +149,36 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
             )}
           </div>
 
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">
-            اپنا ذاتی ریکارڈ تلاش کریں
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white font-sans">
+            MZ Umrah Committee Performance & Financial Records
           </h1>
-          <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
-            محترم ممبر! اپنا رجسٹرڈ <strong>مکمل نام</strong> اور <strong>13 ہندسوں کا شناختی کارڈ (CNIC)</strong> درج کریں تاکہ آپ کی کمیٹی کا مکمل سالانہ اور تمام اقساط کا باضابطہ تصدیق شدہ کھاتہ دکھایا جا سکے۔
-          </p>
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-amber-300 font-urdu" dir="rtl">
+            اپنا ذاتی ریکارڈ تلاش کریں
+          </h2>
         </div>
       </div>
 
       {/* 2-Input Search Form Box */}
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 sm:p-8">
-        <div className="border-b border-gray-100 pb-4 mb-6 flex items-center justify-between">
+        <div className="border-b border-gray-100 pb-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3" dir="rtl">
           <div>
-            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-              <Search className="w-5 h-5 text-emerald-700" />
-              <span>تصدیق برائے ذاتی کھاتہ (Personal Ledger Verification)</span>
+            <h2 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2 font-urdu">
+              <Search className="w-5 h-5 text-emerald-700 shrink-0" />
+              <span>تصدیق برائے ذاتی کھاتہ</span>
+              <span dir="ltr" className="text-xs font-semibold text-gray-500 font-sans">(Personal Ledger Verification)</span>
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-gray-500 mt-1 font-urdu">
               سیکیورٹی کی خاطر ریکارڈ صرف اسی وقت ظاہر ہوگا جب نام اور CNIC دونوں بالکل میچ ہوں گے۔
             </p>
           </div>
           {hasSearched && (
             <button
               onClick={handleClear}
-              className="text-xs text-gray-500 hover:text-emerald-800 flex items-center gap-1 cursor-pointer font-medium"
+              className="text-xs text-gray-500 hover:text-emerald-800 flex items-center gap-1 cursor-pointer font-medium font-urdu self-start sm:self-auto"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>دوبارہ تلاش کریں (Reset)</span>
+              <span>دوبارہ تلاش کریں</span>
+              <span dir="ltr" className="text-[11px] font-sans font-semibold">(Reset)</span>
             </button>
           )}
         </div>
@@ -184,77 +187,82 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Input 1: Name */}
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                مکمل نام (Full Name) <span className="text-rose-500">*</span>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 text-right font-urdu" dir="rtl">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-gray-900 font-black">مکمل نام</span>
+                  <span dir="ltr" className="font-sans text-[11px] font-bold text-gray-600">(FULL NAME)</span>
+                  <span className="text-rose-500 font-bold text-sm">*</span>
+                </span>
               </label>
-              <div className="relative">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <div className="relative" dir="rtl">
+                <User className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
                   required
-                  placeholder="مثلاً: Hafiz Muhammad Usman"
+                  placeholder="مثلاً: حافظ محمد عثمان / Hafiz Muhammad Usman"
                   value={inputName}
                   onChange={(e) => setInputName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-900 placeholder:text-gray-400 focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition-all"
+                  className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-900 placeholder:text-gray-400 focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition-all text-right font-urdu"
+                  dir="rtl"
                 />
               </div>
-              <span className="text-[10px] text-gray-400 mt-1 block">
+              <span className="text-[11px] text-gray-500 mt-1.5 block text-right font-urdu" dir="rtl">
                 کمیٹی فارم کے مطابق انگریزی یا اردو میں نام درج کریں۔
               </span>
             </div>
 
             {/* Input 2: CNIC */}
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                شناختی کارڈ نمبر (CNIC) <span className="text-rose-500">*</span>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 text-right font-urdu" dir="rtl">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-gray-900 font-black">شناختی کارڈ نمبر</span>
+                  <span dir="ltr" className="font-sans text-[11px] font-bold text-gray-600">(CNIC)</span>
+                  <span className="text-rose-500 font-bold text-sm">*</span>
+                </span>
               </label>
               <div className="relative">
-                <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
                   required
                   placeholder="42101-1234567-1 یا 4210112345671"
                   value={inputCnic}
                   onChange={(e) => setInputCnic(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-900 placeholder:text-gray-400 focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition-all"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm font-mono font-semibold text-gray-900 placeholder:text-gray-400 focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition-all text-left"
+                  dir="ltr"
                 />
               </div>
-              <span className="text-[10px] text-gray-400 mt-1 block">
+              <span className="text-[11px] text-gray-500 mt-1.5 block text-right font-urdu" dir="rtl">
                 13 ہندسوں کا قومی شناختی کارڈ نمبر (ڈیش کے ساتھ یا بغیر)
               </span>
             </div>
           </div>
 
           {/* Action Button */}
-          <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4" dir="rtl">
             <button
               type="submit"
-              className="w-full sm:w-auto px-8 py-3.5 bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              dir="rtl"
+              className="w-full sm:w-auto px-8 py-3.5 bg-amber-500 hover:bg-amber-400 text-emerald-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 font-urdu"
             >
-              <Search className="w-4 h-4" />
-              <span>ریکارڈ تلاش کریں (Search Record)</span>
+              <Search className="w-4 h-4 shrink-0" />
+              <span>ریکارڈ تلاش کریں</span>
+              <span dir="ltr" className="font-sans text-[11px] font-black tracking-wide">(SEARCH RECORD)</span>
             </button>
 
-            {/* Quick Demo Sample Pill (for tester/Abdul Shakoor Madni ease) */}
+            {/* Quick Demo Sample Pills without "مثال برائے ٹیسٹ:" span in RTL */}
             {members.length > 0 && !matchedMember && (
-              <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-gray-400">مثال برائے ٹیسٹ:</span>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo(members[0])}
-                  className="px-2.5 py-1 bg-gray-100 hover:bg-emerald-50 hover:text-emerald-800 text-gray-700 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border border-gray-200"
-                >
-                  {members[0].fullName}
-                </button>
-                {members[1] && (
+              <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1.5 justify-end" dir="rtl">
+                {members.slice(0, 3).map((demoMember) => (
                   <button
+                    key={demoMember.id}
                     type="button"
-                    onClick={() => handleQuickDemo(members[1])}
-                    className="px-2.5 py-1 bg-gray-100 hover:bg-emerald-50 hover:text-emerald-800 text-gray-700 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border border-gray-200"
+                    onClick={() => handleQuickDemo(demoMember)}
+                    className="px-3 py-1 bg-gray-100 hover:bg-emerald-50 hover:text-emerald-800 text-gray-700 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border border-gray-200 font-urdu"
                   >
-                    {members[1].fullName}
+                    {demoMember.fullName}
                   </button>
-                )}
+                ))}
               </div>
             )}
           </div>
@@ -292,8 +300,8 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
       {matchedMember && (
         <div className="space-y-6">
           {/* Official Verification Header Ribbon */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 text-xs text-emerald-900 font-semibold">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3" dir="rtl">
+            <div className="flex items-center gap-2.5 text-xs text-emerald-900 font-semibold font-urdu">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               <span>
                 تصدیق شدہ ذاتی کھاتہ: <strong>{matchedMember.fullName}</strong> ({matchedMember.memberNumber}) • جملہ معلومات محفوظ ہیں
@@ -301,10 +309,11 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
             </div>
             <button
               onClick={() => window.print()}
-              className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer no-print self-start sm:self-auto"
+              className="px-3.5 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-300 shadow-2xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer no-print self-start sm:self-auto font-urdu"
             >
               <Printer className="w-3.5 h-3.5 text-emerald-700" />
-              <span>پاس بک پرنٹ کریں (Print Statement)</span>
+              <span>پاس بک پرنٹ کریں</span>
+              <span dir="ltr" className="font-sans text-[11px] font-semibold text-emerald-800">(Print Statement)</span>
             </button>
           </div>
 
@@ -385,9 +394,10 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                   </span>
                 </div>
 
-                <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                    ایڈوانس رقم (Advance)
+                <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs" dir="rtl">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                    <span>ایڈوانس رقم</span>
+                    <span dir="ltr" className="font-sans text-[9px] font-semibold text-gray-500">(Advance)</span>
                   </span>
                   <div className="text-base sm:text-lg font-black text-blue-700 mt-1">
                     {formatPKR(matchedMember.advanceAmount)}
@@ -399,9 +409,12 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
               </div>
 
               {/* Progress Bar */}
-              <div className="mt-4 pt-4 border-t border-gray-200/80">
-                <div className="flex justify-between text-xs text-gray-600 font-semibold mb-1.5">
-                  <span>کمیٹی مکمل ہونے کا تناسب (Progress)</span>
+              <div className="mt-4 pt-4 border-t border-gray-200/80" dir="rtl">
+                <div className="flex justify-between text-xs text-gray-600 font-semibold mb-1.5 font-urdu">
+                  <span className="flex items-center gap-1">
+                    <span>کمیٹی مکمل ہونے کا تناسب</span>
+                    <span dir="ltr" className="font-sans text-[10px] text-gray-500 font-semibold">(Progress)</span>
+                  </span>
                   <span className="text-emerald-800 font-bold">{progressPercent}% مکمل</span>
                 </div>
                 <div className="w-full bg-gray-200 h-2.5 rounded-full overflow-hidden">
@@ -416,17 +429,17 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
 
           {/* Complete Tenure / Full Year Installment Schedule */}
           <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 sm:p-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6" dir="rtl">
               <div>
-                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2 font-urdu">
                   <Calendar className="w-5 h-5 text-emerald-700" />
                   <span>مکمل سالانہ اقساط کا شیڈول (تمام {matchedMember.planMonths} اقساط)</span>
                 </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-500 mt-0.5 font-urdu">
                   پلان کی پہلی قسط سے آخری قسط تک تمام واجبات اور ادائیگیوں کی تفصیلی فہرست
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-2 text-xs font-urdu">
                 <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-lg">
                   {paidCount} ادا شدہ
                 </span>
@@ -437,21 +450,31 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
             </div>
 
             {memberInstallments.length === 0 ? (
-              <div className="text-center py-12 text-xs text-gray-400">
+              <div className="text-center py-12 text-xs text-gray-400 font-urdu">
                 اقساط کا ریکارڈ لوڈ ہو رہا ہے...
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse">
+              <div className="overflow-x-auto" dir="rtl">
+                <table className="w-full text-xs text-right border-collapse font-urdu">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase tracking-wider text-[10px]">
+                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
                       <th className="py-3 px-4">قسط #</th>
-                      <th className="py-3 px-4">مقررہ تاریخ (Due Date)</th>
-                      <th className="py-3 px-4">رقم (Amount)</th>
-                      <th className="py-3 px-4">حالت (Status)</th>
+                      <th className="py-3 px-4">
+                        <span>مقررہ تاریخ</span> <span dir="ltr" className="font-sans text-[9px] font-semibold text-gray-400">(Due Date)</span>
+                      </th>
+                      <th className="py-3 px-4">
+                        <span>رقم</span> <span dir="ltr" className="font-sans text-[9px] font-semibold text-gray-400">(Amount)</span>
+                      </th>
+                      <th className="py-3 px-4">
+                        <span>حالت</span> <span dir="ltr" className="font-sans text-[9px] font-semibold text-gray-400">(Status)</span>
+                      </th>
                       <th className="py-3 px-4">ادائیگی کی تاریخ</th>
-                      <th className="py-3 px-4">طریقہ کار (Method)</th>
-                      <th className="py-3 px-4 text-right">رسید (Receipt)</th>
+                      <th className="py-3 px-4">
+                        <span>طریقہ کار</span> <span dir="ltr" className="font-sans text-[9px] font-semibold text-gray-400">(Method)</span>
+                      </th>
+                      <th className="py-3 px-4 text-left">
+                        <span>رسید</span> <span dir="ltr" className="font-sans text-[9px] font-semibold text-gray-400">(Receipt)</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -473,12 +496,12 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                           <td className="py-3.5 px-4 font-mono text-gray-700">
                             {formatDateDisplay(inst.dueDate)}
                           </td>
-                          <td className="py-3.5 px-4 font-bold text-gray-900">
+                          <td className="py-3.5 px-4 font-bold text-gray-900 font-mono">
                             {formatPKR(inst.amount)}
                           </td>
                           <td className="py-3.5 px-4">
                             <span
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
                                 isPaid
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : isLate
@@ -488,7 +511,27 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                                   : 'bg-gray-100 text-gray-600'
                               }`}
                             >
-                              {isPaid ? 'ادا شدہ (Paid)' : isLate ? 'تاخیر (Overdue)' : isDue ? 'واجب الادا (Due)' : 'آئندہ (Upcoming)'}
+                              {isPaid ? (
+                                <>
+                                  <span>ادا شدہ</span>
+                                  <span dir="ltr" className="font-sans text-[9px] font-bold">(Paid)</span>
+                                </>
+                              ) : isLate ? (
+                                <>
+                                  <span>تاخیر</span>
+                                  <span dir="ltr" className="font-sans text-[9px] font-bold">(Overdue)</span>
+                                </>
+                              ) : isDue ? (
+                                <>
+                                  <span>واجب الادا</span>
+                                  <span dir="ltr" className="font-sans text-[9px] font-bold">(Due)</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>آئندہ</span>
+                                  <span dir="ltr" className="font-sans text-[9px] font-bold">(Upcoming)</span>
+                                </>
+                              )}
                             </span>
                           </td>
                           <td className="py-3.5 px-4 text-gray-600">
@@ -503,7 +546,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                               '—'
                             )}
                           </td>
-                          <td className="py-3.5 px-4 text-right">
+                          <td className="py-3.5 px-4 text-left">
                             {isPaid && (
                               <button
                                 onClick={() => {
@@ -516,7 +559,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                                     onOpenReceipt(matchingRec);
                                   }
                                 }}
-                                className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                                className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 font-urdu"
                               >
                                 <ReceiptIcon className="w-3 h-3" />
                                 <span>رسید دیکھیں</span>
@@ -534,10 +577,13 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
 
           {/* Official Issued Receipts List */}
           {memberReceipts.length > 0 && (
-            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 sm:p-8">
-              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-4">
-                <ReceiptIcon className="w-5 h-5 text-emerald-700" />
-                <span>جاری شدہ باضابطہ رسیدیں ({memberReceipts.length})</span>
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 sm:p-8" dir="rtl">
+              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-4 font-urdu">
+                <ReceiptIcon className="w-5 h-5 text-emerald-700 shrink-0" />
+                <span>جاری شدہ باضابطہ رسیدیں</span>
+                <span className="text-xs font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                  {memberReceipts.length}
+                </span>
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

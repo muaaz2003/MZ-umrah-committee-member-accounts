@@ -14,7 +14,11 @@ import {
   Trash2,
   FileCheck2,
   ShieldCheck,
+  Share2,
+  Loader2,
 } from 'lucide-react';
+import html2canvas from 'html2canvas-pro';
+import jsPDF from 'jspdf';
 import { Member, MemberStatus } from '../types';
 import { getNextMembershipNumber, createMember } from '../services/firebaseService';
 import { DEFAULT_MONTHLY_INSTALLMENT, PLAN_A_TOTAL, PLAN_B_TOTAL, formatPKR } from '../utils/calculations';
@@ -58,6 +62,111 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSharingPdf, setIsSharingPdf] = useState(false);
+  const [shareNotification, setShareNotification] = useState<string | null>(null);
+  const printableFormRef = useRef<HTMLDivElement | null>(null);
+
+  // Generate PDF and Share via Web Share API or Fallback to WhatsApp
+  const handleShareWhatsAppPDF = async () => {
+    if (!fullName.trim() && !mobile.trim() && !cnic.trim()) {
+      setErrorMessage('براہ کرم پی ڈی ایف شیئر کرنے سے پہلے کم از کم ممبر کا نام یا رابطہ درج فرمائیں۔');
+      return;
+    }
+
+    try {
+      setIsSharingPdf(true);
+      setErrorMessage('');
+      setShareNotification('پی ڈی ایف تیار ہو رہی ہے، برائے مہربانی چند لمحے انتظار فرمائیں...');
+
+      if (document.fonts) {
+        await document.fonts.ready;
+      }
+
+      if (!printableFormRef.current) {
+        throw new Error('Printable form element not found');
+      }
+
+      const element = printableFormRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2.2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 800,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth(); // 210 mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 297 mm
+
+      const margin = 5;
+      const printW = pageWidth - margin * 2; // 200 mm
+      const printH = pageHeight - margin * 2; // 287 mm
+
+      const scale = Math.min(printW / canvas.width, printH / canvas.height);
+      const renderW = canvas.width * scale;
+      const renderH = canvas.height * scale;
+      const xOffset = margin + (printW - renderW) / 2;
+      const yOffset = margin + (printH - renderH) / 2;
+
+      pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderW, renderH, undefined, 'FAST');
+
+      const pdfBlob = pdf.output('blob');
+      const safeName = (fullName.trim() || 'Member').replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
+      const safeNum = (memberNumber || 'MZ').replace(/[^a-zA-Z0-9_-]/g, '');
+      const fileName = `${safeNum}_${safeName}_Registration_Form.pdf`;
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+      // Native Web Share API Check & Execution
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.canShare &&
+        navigator.canShare({ files: [pdfFile] }) &&
+        navigator.share
+      ) {
+        await navigator.share({
+          files: [pdfFile],
+          title: 'Member Form',
+          text: 'السلام علیکم! یہ ممبر رجسٹریشن فارم کی پی ڈی ایف فائل ہے۔',
+        });
+        setShareNotification('فائل کامیابی کے ساتھ شیئر کر دی گئی ہے۔');
+      } else {
+        // Fallback Mechanism (for Unsupported Desktop Browsers):
+        // 1. Auto-download PDF
+        const downloadUrl = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(downloadUrl);
+
+        // 2. Open WhatsApp Web or wa.me
+        const targetPhone = (whatsapp || mobile || '').replace(/[^0-9]/g, '');
+        const waText = encodeURIComponent('السلام علیکم! یہ ممبر رجسٹریشن فارم کی پی ڈی ایف فائل ہے۔');
+        const waUrl = targetPhone.length >= 10
+          ? `https://wa.me/92${targetPhone.startsWith('0') ? targetPhone.slice(1) : targetPhone}?text=${waText}`
+          : `https://web.whatsapp.com/send?text=${waText}`;
+
+        window.open(waUrl, '_blank');
+
+        setShareNotification(
+          'پی ڈی ایف فائل ڈاؤن لوڈ کر لی گئی ہے۔ براؤزر میں ڈائریکٹ شیئر سپورٹ نہ ہونے کے باعث واٹس ایپ کھول دیا گیا ہے، براہ کرم ڈاؤن لوڈ شدہ پی ڈی ایف فائل اٹیچ کر کے بھیجیں۔'
+        );
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        setShareNotification(null);
+      } else {
+        console.error('Error sharing PDF:', err);
+        setErrorMessage('پی ڈی ایف شیئر کرنے میں مسئلہ پیش آیا۔ براہ کرم دوبارہ کوشش کریں۔');
+      }
+    } finally {
+      setIsSharingPdf(false);
+    }
+  };
 
   // Instant local calculation of next membership number to avoid click delay
   useEffect(() => {
@@ -232,9 +341,26 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         >
           <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-4 sm:space-y-5 flex-1">
           {errorMessage && (
-            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2 text-right" dir="rtl">
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2 text-right font-urdu" dir="rtl">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {shareNotification && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-xs font-semibold text-emerald-950 flex items-center justify-between gap-2 text-right shadow-2xs font-urdu" dir="rtl">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-700" />
+                <span>{shareNotification}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareNotification(null)}
+                className="text-emerald-800 hover:text-emerald-950 font-bold px-2 py-0.5 cursor-pointer text-sm"
+                aria-label="Close notification"
+              >
+                ✕
+              </button>
             </div>
           )}
 
@@ -818,30 +944,241 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           </div>
 
           {/* Action Buttons - Fixed & Locked at Bottom */}
-          <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0 shadow-xs" dir="rtl">
+          <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-xs" dir="rtl">
+            {/* WhatsApp Share PDF Button */}
             <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 bg-emerald-800 hover:bg-emerald-900 active:scale-98 disabled:bg-emerald-400 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+              type="button"
+              id="whatsapp-share-pdf-btn"
+              onClick={handleShareWhatsAppPDF}
+              disabled={isSharingPdf || isSubmitting}
+              style={{ backgroundColor: '#25D366' }}
+              className="px-4 sm:px-5 py-2.5 hover:opacity-95 active:scale-98 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer font-urdu shrink-0"
+              dir="rtl"
             >
-              {isSubmitting ? (
-                <span>رجسٹریشن جاری ہے... (Registering...)</span>
+              {isSharingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0 text-white" />
+                  <span>پی ڈی ایف تیار ہو رہی ہے...</span>
+                </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4 text-amber-300" />
-                  <span>نیا ممبر رجسٹر کریں ({planMonths} ماہ اقساط)</span>
+                  <Share2 className="w-4 h-4 shrink-0 text-white" />
+                  <span>واٹس ایپ پر فائل شیئر کریں</span>{' '}
+                  <span dir="ltr" className="font-sans text-[10px] font-extrabold uppercase tracking-wide opacity-95">
+                    (SHARE PDF VIA WHATSAPP)
+                  </span>
                 </>
               )}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200/70 transition-colors cursor-pointer"
-            >
-              منسوخ (Cancel)
-            </button>
+
+            {/* Submit & Cancel Buttons */}
+            <div className="flex items-center gap-2.5">
+              <button
+                type="submit"
+                disabled={isSubmitting || isSharingPdf}
+                className="px-5 sm:px-6 py-2.5 bg-emerald-800 hover:bg-emerald-900 active:scale-98 disabled:bg-emerald-400 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer font-urdu"
+              >
+                {isSubmitting ? (
+                  <span>رجسٹریشن جاری ہے... (Registering...)</span>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
+                    <span>نیا ممبر رجسٹر کریں ({planMonths} ماہ اقساط)</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200/70 transition-colors cursor-pointer font-urdu"
+              >
+                منسوخ (Cancel)
+              </button>
+            </div>
           </div>
         </form>
+      </div>
+
+      {/* Hidden Off-Screen Container for capturing high-definition printable PDF */}
+      <div
+        style={{
+          position: 'fixed',
+          left: '-9999px',
+          top: 0,
+          width: '820px',
+          zIndex: -100,
+          backgroundColor: '#ffffff',
+          pointerEvents: 'none',
+        }}
+        aria-hidden="true"
+      >
+        <div
+          ref={printableFormRef}
+          id="printable-member-registration-form"
+          className="p-8 bg-white text-slate-900 font-sans border-2 border-emerald-900"
+          style={{ width: '820px', minHeight: '1100px' }}
+          dir="rtl"
+        >
+          {/* Header Banner */}
+          <div className="border-b-2 border-emerald-900 pb-4 mb-4 flex items-center justify-between">
+            <div className="text-right">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-3 h-3 bg-emerald-700 rounded-full inline-block"></span>
+                <h1 className="text-2xl font-black text-emerald-950 font-urdu">
+                  ایم زیڈ عمرہ کمیٹی پاکستان
+                </h1>
+              </div>
+              <p className="text-xs text-emerald-800 font-bold font-urdu">
+                زیر سرپرستی: ایم زیڈ اے ویلفیئر ٹرسٹ (رجسٹرڈ) • قائم کردہ 2019
+              </p>
+              <p className="text-[10px] text-slate-500 font-sans font-bold uppercase tracking-wider mt-0.5">
+                MZ UMRAH COMMITTEE PAKISTAN • OFFICIAL MEMBER REGISTRATION FORM
+              </p>
+            </div>
+
+            <div className="text-left flex flex-col items-end">
+              <div className="bg-emerald-950 text-amber-300 px-3.5 py-1.5 rounded-lg text-sm font-mono font-black border border-emerald-800">
+                {memberNumber || 'MZ-#001'}
+              </div>
+              <div className="text-[11px] text-slate-600 font-semibold mt-1 font-mono">
+                تاریخ شمولیت: {joiningDate || new Date().toISOString().split('T')[0]}
+              </div>
+            </div>
+          </div>
+
+          {/* Member Photo & Primary Information */}
+          <div className="grid grid-cols-4 gap-4 mb-4 p-4 bg-emerald-50/60 rounded-xl border border-emerald-200">
+            <div className="col-span-1 flex flex-col items-center justify-center">
+              {memberPhoto ? (
+                <img
+                  src={memberPhoto}
+                  alt="Member"
+                  className="w-24 h-28 object-cover rounded-lg border-2 border-emerald-900 shadow-xs"
+                />
+              ) : (
+                <div className="w-24 h-28 border-2 border-dashed border-emerald-400 bg-white rounded-lg flex flex-col items-center justify-center text-emerald-800 p-2 text-center">
+                  <Camera className="w-6 h-6 mb-1 opacity-50" />
+                  <span className="text-[9px] font-bold font-urdu leading-tight">پاسپورٹ سائز تصویر برائے ممبر</span>
+                </div>
+              )}
+            </div>
+
+            <div className="col-span-3 grid grid-cols-2 gap-3 text-right">
+              <div className="p-2.5 bg-white rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 font-bold block">مکمل نام (Full Name)</span>
+                <span className="text-sm font-black text-slate-900 font-urdu">{fullName || '—'}</span>
+              </div>
+              <div className="p-2.5 bg-white rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 font-bold block">ولدیت (Father Name)</span>
+                <span className="text-sm font-bold text-slate-800 font-urdu">{fatherName || '—'}</span>
+              </div>
+              <div className="p-2.5 bg-white rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 font-bold block">قومی شناختی کارڈ (CNIC)</span>
+                <span className="text-xs font-mono font-bold text-slate-900">{cnic || '—'}</span>
+              </div>
+              <div className="p-2.5 bg-white rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 font-bold block">موبائل / واٹس ایپ (Phone)</span>
+                <span className="text-xs font-mono font-bold text-slate-900">{mobile || whatsapp || '—'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Committee Plan Details */}
+          <div className="mb-4 text-right">
+            <div className="bg-emerald-900 text-white px-3 py-1.5 rounded-t-lg text-xs font-black font-urdu flex items-center justify-between">
+              <span>کمیٹی پلان اور فیس کی تفصیلات</span>
+              <span dir="ltr" className="font-sans text-[10px] font-semibold">(Committee Plan & Fee Details)</span>
+            </div>
+            <table className="w-full border border-slate-300 text-xs text-right border-collapse">
+              <tbody>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <td className="p-2.5 font-bold text-slate-700 w-1/4">کمیٹی پلان کی مدت:</td>
+                  <td className="p-2.5 font-bold text-emerald-950 w-1/4 font-mono">{planMonths} Months ({planMonths === 24 ? '2 سال' : '3 سال'})</td>
+                  <td className="p-2.5 font-bold text-slate-700 w-1/4">ماہانہ قسط:</td>
+                  <td className="p-2.5 font-bold text-emerald-900 w-1/4 font-mono">Rs. {validMonthly.toLocaleString()}</td>
+                </tr>
+                <tr className="border-b border-slate-200">
+                  <td className="p-2.5 font-bold text-slate-700">کل متوقع رقم:</td>
+                  <td className="p-2.5 font-bold text-emerald-950 font-mono">Rs. {totalAmount.toLocaleString()}</td>
+                  <td className="p-2.5 font-bold text-slate-700">رجسٹریشن فیس:</td>
+                  <td className="p-2.5 font-bold text-emerald-900 font-mono">Rs. {Number(registrationFee || 1000).toLocaleString()}</td>
+                </tr>
+                <tr className="bg-slate-50">
+                  <td className="p-2.5 font-bold text-slate-700">رہائشی پتہ:</td>
+                  <td colSpan={3} className="p-2.5 text-slate-900 font-medium font-urdu">{address || '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Kafeel / Guarantor Details */}
+          <div className="mb-4 text-right">
+            <div className="bg-slate-800 text-white px-3 py-1.5 rounded-t-lg text-xs font-black font-urdu flex items-center justify-between">
+              <span>کفیل / ضامن کی تفصیلات</span>
+              <span dir="ltr" className="font-sans text-[10px] font-semibold">(Guarantor / Kafeel Details)</span>
+            </div>
+            <table className="w-full border border-slate-300 text-xs text-right border-collapse">
+              <tbody>
+                <tr className="border-b border-slate-200">
+                  <td className="p-2.5 font-bold text-slate-700 w-1/4">کفیل کا نام:</td>
+                  <td className="p-2.5 font-bold text-slate-900 w-1/4 font-urdu">{nomineeName || '—'}</td>
+                  <td className="p-2.5 font-bold text-slate-700 w-1/4">رشتہ / تعلق:</td>
+                  <td className="p-2.5 font-bold text-slate-900 w-1/4 font-urdu">{nomineeRelation || '—'}</td>
+                </tr>
+                <tr className="bg-slate-50">
+                  <td className="p-2.5 font-bold text-slate-700">شناختی کارڈ:</td>
+                  <td className="p-2.5 font-mono font-bold text-slate-900">{nomineeCnic || '—'}</td>
+                  <td className="p-2.5 font-bold text-slate-700">موبائل نمبر:</td>
+                  <td className="p-2.5 font-mono font-bold text-slate-900">{nomineeMobile || '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Undertakings */}
+          <div className="grid grid-cols-2 gap-3 mb-4 text-right font-urdu text-[11px]">
+            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+              <h5 className="font-black text-emerald-950 mb-1">عہد نامہ برائے ممبر:</h5>
+              <p className="text-emerald-900 leading-relaxed text-[10px]">
+                ”میں اقرار کرتاہوں کہ اس فارم کو بغور پڑھااوراس فارم میں جوکچھ تحریرکی ہے سب کچھ درست ہے ، ان شاء اللہ ہرماہ کی واجب الادارقم پابندی سے اداکرونگا،اور اس کمیٹی کامقصدکوپوراکرتے ہوئے شکایت کا موقع نہیں دونگا۔“
+              </p>
+            </div>
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+              <h5 className="font-black text-amber-950 mb-1">عہد نامہ برائے ضامن / کفیل:</h5>
+              <p className="text-amber-900 leading-relaxed text-[10px]">
+                ”میں اقرار کرتا /کرتی ہوں کہ ممبرکوبحیثیت رشتہ دار جانتا/جانتی ہوں ،اورمکمل طور پر ممبرکی ضمانت لیتا/لیتی ہوں کہ انشاءاللہ ممبر کسی بھی قسم کی کوئی شکایت کاموقع نہیں دیگا/دیگی“
+              </p>
+            </div>
+          </div>
+
+          {/* Signatures & Stamp */}
+          <div className="border-t-2 border-slate-300 pt-5 mt-2 grid grid-cols-3 gap-4 text-center">
+            <div>
+              <div className="h-12 border-b border-dashed border-slate-400 mb-1"></div>
+              <span className="text-xs font-bold text-slate-800 font-urdu block">دستخط ممبر</span>
+              <span className="text-[10px] text-slate-400 font-sans">(Member Signature)</span>
+            </div>
+            <div>
+              <div className="h-12 border-b border-dashed border-slate-400 mb-1"></div>
+              <span className="text-xs font-bold text-slate-800 font-urdu block">دستخط کفیل / ضامن</span>
+              <span className="text-[10px] text-slate-400 font-sans">(Guarantor Signature)</span>
+            </div>
+            <div>
+              <div className="h-12 border-b border-dashed border-slate-400 mb-1 flex items-center justify-center">
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-300 font-urdu">
+                  مہر و دستخط نگرانِ اعلیٰ
+                </span>
+              </div>
+              <span className="text-xs font-bold text-slate-800 font-urdu block">عبد الشکور مدنی</span>
+              <span className="text-[10px] text-emerald-700 font-sans font-bold">+92 300 8765432</span>
+            </div>
+          </div>
+
+          {/* Footer note */}
+          <div className="mt-6 pt-2 border-t border-slate-200 text-center text-[10px] text-slate-500 font-urdu">
+            ایم زیڈ عمرہ کمیٹی پاکستان • باضابطہ کمپیوٹرائزڈ ممبر فارم • جملہ حقوق بحق کمیٹی محفوظ ہیں۔
+          </div>
+        </div>
       </div>
     </div>
   );

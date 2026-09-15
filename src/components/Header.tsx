@@ -76,8 +76,18 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       );
     }
+    if (currentPage === 'zati-record') {
+      return (
+        <div className="text-xs sm:text-sm font-bold text-gray-900 truncate flex items-center gap-1.5" dir="rtl">
+          <span className="font-urdu">اپنا ذاتی ریکارڈ</span>
+          <span dir="ltr" className="text-[11px] sm:text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 font-sans">
+            (Member Portal)
+          </span>
+        </div>
+      );
+    }
     const titles: Record<string, string> = {
-      'zati-record': 'اپنا ذاتی ریکارڈ (Member Portal)',
+      'zati-record': 'اپنا ذاتی ریکارڈ',
       dashboard: 'Dashboard',
       members: 'All Members',
       'plan-24': '24 Month Committee Plan',
