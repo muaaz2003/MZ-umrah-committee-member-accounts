@@ -15,8 +15,15 @@ export async function testFirebaseConnection() {
     await getDocFromServer(doc(db, 'settings', 'test-connection'));
     console.log('Firebase connection verified.');
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client offline, operating with cache/fallback.');
+    if (
+      error instanceof Error &&
+      (error.message.includes('the client is offline') ||
+        error.message.includes('unavailable') ||
+        (error as any).code === 'unavailable')
+    ) {
+      console.warn('Firebase client operating in offline/cache mode until connection is re-established.');
+    } else {
+      console.warn('Firebase connection notice:', error);
     }
   }
 }

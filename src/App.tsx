@@ -148,13 +148,15 @@ export function App() {
         getSettings(),
       ]);
 
-      setMembers(membersData);
-      setPayments(paymentsData);
-      setReceipts(receiptsData);
-      setInstallments(installmentsData);
-      setRefunds(refundsData);
-      setAuditLogs(auditLogsData);
-      setSettingsState(settingsData);
+      setMembers(membersData || []);
+      setPayments(paymentsData || []);
+      setReceipts(receiptsData || []);
+      setInstallments(installmentsData || []);
+      setRefunds(refundsData || []);
+      setAuditLogs(auditLogsData || []);
+      if (settingsData) {
+        setSettingsState(settingsData);
+      }
     } catch (err) {
       console.error('Error loading Firestore data:', err);
     } finally {

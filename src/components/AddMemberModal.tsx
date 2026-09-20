@@ -264,7 +264,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
     }
 
     if (!guarantorAgreement) {
-      setErrorMessage('برائے مہربانی کفیل / ضامن کے عہد نامہ کی توثیق کریں۔ (Please accept the guarantor undertaking)');
+      setErrorMessage('برائے مہربانی ضامن کے عہد نامہ کی توثیق کریں۔ (Please accept the guarantor undertaking)');
       return;
     }
 
@@ -820,20 +820,20 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             </label>
           </div>
 
-          {/* Section 3: Kafeel Details (کفیل کی تفصیلات) */}
+          {/* Section 3: Zamin Details (ضامن کی تفصیلات) */}
           <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-3.5 pt-2">
             <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5 mb-1" dir="rtl">
               <h4 className="text-base sm:text-lg font-black text-emerald-950 tracking-wide flex items-center gap-2">
                 <span className="w-2.5 h-5 bg-emerald-700 rounded-full inline-block"></span>
-                <span>3. کفیل کی تفصیلات</span>{' '}
-                <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Kafeel / Guarantor Details)</bdi>
+                <span>3. ضامن کی تفصیلات</span>{' '}
+                <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Zamin / Guarantor Details)</bdi>
               </h4>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
-                  <span className="text-slate-900">کفیل کا نام</span>{' '}
-                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Kafeel Name)</bdi>
+                  <span className="text-slate-900">ضامن کا نام</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Zamin Name)</bdi>
                 </label>
                 <input
                   type="text"
@@ -862,8 +862,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
-                  <span className="text-slate-900">کفیل کا شناختی کارڈ</span>{' '}
-                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Kafeel CNIC)</bdi>
+                  <span className="text-slate-900">ضامن کا شناختی کارڈ</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Zamin CNIC)</bdi>
                 </label>
                 <input
                   type="text"
@@ -877,8 +877,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
-                  <span className="text-slate-900">کفیل کا موبائل نمبر</span>{' '}
-                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Kafeel Mobile)</bdi>
+                  <span className="text-slate-900">ضامن کا موبائل نمبر</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Zamin Mobile)</bdi>
                 </label>
                 <input
                   type="text"
@@ -891,13 +891,13 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
               </div>
             </div>
 
-            {/* Guarantor / Kafeel Undertaking (عہد نامہ برائے ضامن / کفیل) */}
+            {/* Guarantor Undertaking (عہد نامہ برائے ضامن) */}
             <div className="bg-amber-50/80 border border-amber-200/90 p-4 rounded-2xl space-y-3 text-right mt-3 shadow-2xs" dir="rtl">
               <div className="flex items-center justify-between gap-2 flex-wrap border-b border-amber-200/80 pb-2.5">
                 <h4 className="text-base sm:text-lg font-black text-amber-950 flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0" />
-                  <span>عہد نامہ برائے ضامن / کفیل</span>{' '}
-                  <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Guarantor / Kafeel Undertaking)</bdi>
+                  <span>عہد نامہ برائے ضامن</span>{' '}
+                  <bdi dir="ltr" className="text-slate-500 font-sans text-xs font-semibold">(Guarantor / Zamin Undertaking)</bdi>
                 </h4>
                 <span className="text-xs font-bold text-amber-900 bg-amber-100/90 px-3 py-1 rounded-lg border border-amber-200">
                   ضمانت نامہ
@@ -915,7 +915,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                   className="w-4 h-4 text-amber-600 border-slate-300 rounded focus:ring-amber-500 cursor-pointer"
                 />
                 <span className="text-xs font-bold text-slate-900">
-                  <span>میں بحیثیت کفیل / ضامن اس عہد نامے اور ضمانت کی مکمل توثیق کرتا / کرتی ہوں</span>{' '}
+                  <span>میں بحیثیت ضامن اس عہد نامے اور ضمانت کی مکمل توثیق کرتا / کرتی ہوں</span>{' '}
                   <bdi dir="ltr" className="text-[10px] text-slate-500 font-sans font-normal">(Guarantor confirmation)</bdi>
                 </span>
               </label>
@@ -1111,16 +1111,16 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             </table>
           </div>
 
-          {/* Kafeel / Guarantor Details */}
+          {/* Zamin / Guarantor Details */}
           <div className="mb-4 text-right">
             <div className="bg-slate-800 text-white px-3 py-1.5 rounded-t-lg text-xs font-black font-urdu flex items-center justify-between">
-              <span>کفیل / ضامن کی تفصیلات</span>
-              <span dir="ltr" className="font-sans text-[10px] font-semibold">(Guarantor / Kafeel Details)</span>
+              <span>ضامن کی تفصیلات</span>
+              <span dir="ltr" className="font-sans text-[10px] font-semibold">(Guarantor / Zamin Details)</span>
             </div>
             <table className="w-full border border-slate-300 text-xs text-right border-collapse">
               <tbody>
                 <tr className="border-b border-slate-200">
-                  <td className="p-2.5 font-bold text-slate-700 w-1/4">کفیل کا نام:</td>
+                  <td className="p-2.5 font-bold text-slate-700 w-1/4">ضامن کا نام:</td>
                   <td className="p-2.5 font-bold text-slate-900 w-1/4 font-urdu">{nomineeName || '—'}</td>
                   <td className="p-2.5 font-bold text-slate-700 w-1/4">رشتہ / تعلق:</td>
                   <td className="p-2.5 font-bold text-slate-900 w-1/4 font-urdu">{nomineeRelation || '—'}</td>
@@ -1144,7 +1144,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
               </p>
             </div>
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-              <h5 className="font-black text-amber-950 mb-1">عہد نامہ برائے ضامن / کفیل:</h5>
+              <h5 className="font-black text-amber-950 mb-1">عہد نامہ برائے ضامن:</h5>
               <p className="text-amber-900 leading-relaxed text-[10px]">
                 ”میں اقرار کرتا /کرتی ہوں کہ ممبرکوبحیثیت رشتہ دار جانتا/جانتی ہوں ،اورمکمل طور پر ممبرکی ضمانت لیتا/لیتی ہوں کہ انشاءاللہ ممبر کسی بھی قسم کی کوئی شکایت کاموقع نہیں دیگا/دیگی“
               </p>
@@ -1160,7 +1160,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             </div>
             <div>
               <div className="h-12 border-b border-dashed border-slate-400 mb-1"></div>
-              <span className="text-xs font-bold text-slate-800 font-urdu block">دستخط کفیل / ضامن</span>
+              <span className="text-xs font-bold text-slate-800 font-urdu block">دستخط ضامن</span>
               <span className="text-[10px] text-slate-400 font-sans">(Guarantor Signature)</span>
             </div>
             <div>

@@ -1,17 +1,18 @@
 import React, { useEffect, useState, useRef } from 'react';
-import QRCode from 'qrcode';
+import html2canvas from 'html2canvas-pro';
+import { jsPDF } from 'jspdf';
 import {
   X,
-  Printer,
   Share2,
   CheckCircle2,
-  ShieldCheck,
   Building2,
   Calendar,
   Phone,
   MapPin,
   FileCheck,
   ExternalLink,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { Receipt } from '../types';
 import { formatPKR, formatDateDisplay } from '../utils/calculations';
@@ -27,25 +28,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onClose,
   receipt,
 }) => {
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [copySuccess, setCopySuccess] = useState(false);
-
-  useEffect(() => {
-    if (receipt) {
-      // Verification link: current origin + query param or path
-      const verificationUrl = `${window.location.origin}/?verify=${receipt.id}`;
-      QRCode.toDataURL(verificationUrl, {
-        width: 140,
-        margin: 1,
-        color: {
-          dark: '#064e3b',
-          light: '#ffffff',
-        },
-      })
-        .then((url) => setQrCodeUrl(url))
-        .catch((err) => console.error('Error generating QR code:', err));
-    }
-  }, [receipt]);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   // Lock background body scroll when receipt modal is open
   useEffect(() => {
@@ -63,38 +49,105 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   if (!isOpen || !receipt) return null;
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handleShareWhatsAppPDF = async () => {
+    if (!receipt || !receiptRef.current) return;
+    setIsGeneratingPdf(true);
+    setNotificationMessage(null);
 
-  const handleWhatsAppShare = () => {
-    const text = `*MZ UMRAH COMMITTEE - PAYMENT RECEIPT*\n` +
-      `*Receipt No:* ${receipt.receiptNumber}\n` +
-      `*Member:* ${receipt.memberName} (${receipt.memberNumber})\n` +
-      `*Installment #:* Qist ${receipt.installmentNumber}\n` +
-      `*Amount Received:* Rs. ${receipt.amount.toLocaleString()}\n` +
-      `*Payment Method:* ${receipt.paymentMethod}\n` +
-      `*Payment Date:* ${formatDateDisplay(receipt.paymentDate)}\n` +
-      `*Total Committee:* Rs. ${receipt.totalCommitteeAmount.toLocaleString()}\n` +
-      `*Total Paid:* Rs. ${receipt.totalPaidAmount.toLocaleString()}\n` +
-      `*Remaining Due:* Rs. ${receipt.totalDueAmount.toLocaleString()}\n\n` +
-      `*Online Verification Link:* ${window.location.origin}/?verify=${receipt.id}\n\n` +
-      `_Supervised by M.Z.A Welfare Pakistan (Est. 2019)_`;
+    try {
+      if (document.fonts) {
+        await document.fonts.ready;
+      }
+      const element = receiptRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2.2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 780,
+      });
 
-    const encoded = encodeURIComponent(text);
-    const phone = receipt.mobile.replace(/[^0-9]/g, '');
-    const waUrl = phone.length >= 10
-      ? `https://wa.me/92${phone.startsWith('0') ? phone.slice(1) : phone}?text=${encoded}`
-      : `https://wa.me/?text=${encoded}`;
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth(); // 210 mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 297 mm
 
-    window.open(waUrl, '_blank');
-  };
+      const margin = 8;
+      const printW = pageWidth - margin * 2; // 194 mm
+      const printH = pageHeight - margin * 2; // 281 mm
 
-  const handleCopyLink = () => {
-    const verificationUrl = `${window.location.origin}/?verify=${receipt.id}`;
-    navigator.clipboard.writeText(verificationUrl);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2500);
+      const scale = Math.min(printW / canvas.width, printH / canvas.height);
+      const renderW = canvas.width * scale;
+      const renderH = canvas.height * scale;
+      const xOffset = margin + (printW - renderW) / 2;
+      const yOffset = margin + (printH - renderH) / 2;
+
+      pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderW, renderH, undefined, 'FAST');
+
+      const pdfBlob = pdf.output('blob');
+      const safeName = (receipt.memberName || 'Member').trim().replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
+      const safeReceiptNo = (receipt.receiptNumber || 'MZ-REC').replace(/[^a-zA-Z0-9_-]/g, '');
+      const fileName = `${safeReceiptNo}_${safeName}_Receipt.pdf`;
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+      // Clean and format member's mobile phone for WhatsApp
+      const rawPhone = (receipt.mobile || '').replace(/[^0-9]/g, '');
+      let cleanPhone = rawPhone;
+      if (cleanPhone.startsWith('0')) {
+        cleanPhone = '92' + cleanPhone.slice(1);
+      } else if (!cleanPhone.startsWith('92') && cleanPhone.length === 10) {
+        cleanPhone = '92' + cleanPhone;
+      }
+
+      const waCaption = `السلام علیکم! محترم ممبر ${receipt.memberName}، یہ آپ کی ایم زیڈ عمرہ کمیٹی قسط رسید #${receipt.receiptNumber} (قسط #${receipt.installmentNumber} - مبلغ ${formatPKR(receipt.amount)}) کی تصدیق شدہ پی ڈی ایف رسید ہے۔`;
+      const waEncoded = encodeURIComponent(waCaption);
+
+      // Check if Web Share API supports direct file sharing (Mobile browsers)
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.canShare &&
+        navigator.canShare({ files: [pdfFile] }) &&
+        navigator.share
+      ) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Receipt #${receipt.receiptNumber}`,
+          text: waCaption,
+        });
+        setNotificationMessage('رسید کامیابی کے ساتھ شیئر کر دی گئی ہے۔');
+      } else {
+        // Fallback for desktop & browsers without direct file sharing:
+        // 1. Download PDF file directly
+        const downloadUrl = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(downloadUrl);
+
+        // 2. Open WhatsApp Web / wa.me directly to member's phone number
+        const waUrl = cleanPhone.length >= 10
+          ? `https://wa.me/${cleanPhone}?text=${waEncoded}`
+          : `https://web.whatsapp.com/send?text=${waEncoded}`;
+
+        window.open(waUrl, '_blank');
+
+        setNotificationMessage(
+          'پی ڈی ایف رسید ڈاؤن لوڈ کر لی گئی ہے اور ممبر کا واٹس ایپ کھل گیا ہے۔ براہ کرم ڈاؤن لوڈ شدہ رسید فائل اٹیچ کر کے بھیج دیں۔'
+        );
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        setNotificationMessage(null);
+      } else {
+        console.error('Error generating/sharing receipt PDF:', err);
+        setNotificationMessage('پی ڈی ایف شیئر کرنے میں مسئلہ پیش آیا۔ براہ کرم دوبارہ کوشش کریں۔');
+      }
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   return (
@@ -109,51 +162,66 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={handlePrint}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
-              title="Print A4 Receipt"
+              type="button"
+              id="receipt-whatsapp-share-btn"
+              onClick={handleShareWhatsAppPDF}
+              disabled={isGeneratingPdf}
+              style={{ backgroundColor: '#25D366' }}
+              className="px-3.5 sm:px-4 py-2 hover:opacity-95 active:scale-98 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-xs cursor-pointer font-urdu"
+              title="Generate PDF & Share to Member via WhatsApp"
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print A4</span>
+              {isGeneratingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0 text-white" />
+                  <span>پی ڈی ایف تیار ہو رہی ہے...</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 shrink-0 text-white" />
+                  <span className="text-xs sm:text-sm">واٹس ایپ پر رسید بھیجیں</span>
+                  <span className="font-sans text-[10px] font-extrabold uppercase tracking-wide opacity-90 hidden sm:inline" dir="ltr">
+                    (PDF SHARE)
+                  </span>
+                </>
+              )}
             </button>
 
             <button
-              onClick={handleWhatsAppShare}
-              className="px-3.5 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
-              title="Share via WhatsApp"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>WhatsApp</span>
-            </button>
-
-            <button
-              onClick={handleCopyLink}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-all"
-            >
-              {copySuccess ? 'Copied!' : 'Copy Link'}
-            </button>
-
-            <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors ml-2"
+              className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors ml-1 cursor-pointer"
+              title="Close"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
+        {/* Status Notification Banner */}
+        {notificationMessage && (
+          <div className="no-print bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-950 flex items-center justify-between gap-2 font-urdu" dir="rtl">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>{notificationMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotificationMessage(null)}
+              className="text-emerald-800 hover:text-emerald-950 font-bold px-2 py-0.5 cursor-pointer text-xs"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Printable Receipt Paper Container */}
         <div className="overflow-y-auto p-4 sm:p-8 flex-1 bg-slate-50 print:bg-white print:p-0">
-          <div className="printable-receipt-card bg-white border border-slate-300 rounded-xl p-6 sm:p-8 shadow-sm max-w-2xl mx-auto text-slate-900 font-sans print:border-none print:shadow-none">
+          <div ref={receiptRef} className="printable-receipt-card bg-white border border-slate-300 rounded-xl p-6 sm:p-8 shadow-sm max-w-2xl mx-auto text-slate-900 font-sans print:border-none print:shadow-none">
             
-            {/* Header / Islamic Branding */}
+            {/* Header / Branding */}
             <div className="text-center border-b-2 border-emerald-900/80 pb-5">
-              <div className="text-xs font-semibold text-amber-700 tracking-wider font-serif">
-                بِسْمِ اللهِ الرَّحْمٰنِ الرَّحِيْمِ
-              </div>
-
               <div className="flex items-center justify-center gap-3 my-2">
                 <div className="w-11 h-11 rounded-xl bg-emerald-900 text-white flex items-center justify-center font-bold text-2xl shadow-sm">
                   🕋
@@ -173,44 +241,29 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               </div>
             </div>
 
-            {/* Receipt Meta & Verification QR Row */}
-            <div className="flex items-start justify-between gap-4 py-4 border-b border-slate-200">
-              <div className="space-y-1 text-xs">
+            {/* Receipt Meta Row */}
+            <div className="py-4 border-b border-slate-200">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div>
-                  <span className="text-slate-500">Receipt No: </span>
+                  <span className="text-slate-500 block text-[11px]">Receipt No: </span>
                   <span className="font-mono font-extrabold text-sm text-emerald-900">
                     {receipt.receiptNumber}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-500">Receipt Date: </span>
-                  <span className="font-semibold">{formatDateDisplay(receipt.createdAt || receipt.paymentDate)}</span>
+                  <span className="text-slate-500 block text-[11px]">Receipt Date: </span>
+                  <span className="font-semibold text-slate-800">{formatDateDisplay(receipt.createdAt || receipt.paymentDate)}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500">Payment Date: </span>
-                  <span className="font-semibold">{formatDateDisplay(receipt.paymentDate)}</span>
+                  <span className="text-slate-500 block text-[11px]">Payment Date: </span>
+                  <span className="font-semibold text-slate-800">{formatDateDisplay(receipt.paymentDate)}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500">Payment Mode: </span>
-                  <span className="font-bold px-2 py-0.5 bg-slate-100 rounded text-slate-800">
+                  <span className="text-slate-500 block text-[11px]">Payment Mode: </span>
+                  <span className="font-bold px-2 py-0.5 bg-slate-100 rounded text-slate-800 inline-block mt-0.5">
                     {receipt.paymentMethod} (Manual Handover)
                   </span>
                 </div>
-              </div>
-
-              {/* QR Code with Official Verification Tag */}
-              <div className="flex flex-col items-center text-center">
-                {qrCodeUrl ? (
-                  <img src={qrCodeUrl} alt="Receipt QR Code" className="w-24 h-24 border border-slate-200 p-1 rounded-md" />
-                ) : (
-                  <div className="w-24 h-24 bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">
-                    QR Code
-                  </div>
-                )}
-                <span className="text-[9px] font-bold text-emerald-800 tracking-wider uppercase mt-1 flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                  Scan to Verify
-                </span>
               </div>
             </div>
 
