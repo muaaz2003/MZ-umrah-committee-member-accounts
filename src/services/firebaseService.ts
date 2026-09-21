@@ -631,6 +631,108 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
   }
 }
 
+export interface RecordManualPaymentPayload {
+  memberName: string;
+  fatherName?: string;
+  mobile?: string;
+  memberNumber?: string;
+  installmentDescription?: string;
+  installmentNumber?: number;
+  amountReceived: number;
+  paymentMethod: PaymentMethod;
+  paymentDate: string;
+  referenceNumber?: string;
+  notes?: string;
+  collectedBy: string;
+}
+
+export async function recordManualPayment(payload: RecordManualPaymentPayload): Promise<{
+  payment: Payment;
+  receipt: Receipt;
+}> {
+  const receiptNumber = await getNextReceiptNumber();
+  const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const receiptId = `rcp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+  const instNum = payload.installmentNumber || 1;
+
+  const memberNumber = payload.memberNumber || `MZ-M-${Date.now().toString().slice(-4)}`;
+
+  const paymentRecord: Payment = {
+    id: paymentId,
+    memberId: `manual_${Date.now()}`,
+    memberNumber,
+    memberName: payload.memberName,
+    installmentId: `manual_inst_${Date.now()}`,
+    installmentNumber: instNum,
+    receiptId,
+    receiptNumber,
+    amountReceived: payload.amountReceived,
+    paymentMethod: payload.paymentMethod,
+    paymentDate: payload.paymentDate,
+    referenceNumber: payload.referenceNumber || '',
+    notes: payload.notes || payload.installmentDescription || 'دستی وصولی',
+    collectedBy: payload.collectedBy,
+    allocationType: 'current',
+    createdAt: now,
+  };
+
+  const receiptRecord: Receipt = {
+    id: receiptId,
+    receiptNumber,
+    memberId: `manual_${Date.now()}`,
+    memberNumber,
+    memberName: payload.memberName,
+    fatherName: payload.fatherName || '—',
+    mobile: payload.mobile || '—',
+    address: 'دستی اندراج / Manual Entry',
+    planMonths: 20,
+    paymentId,
+    installmentNumber: instNum,
+    dueDate: payload.paymentDate,
+    amount: payload.amountReceived,
+    paymentDate: payload.paymentDate,
+    paymentMethod: payload.paymentMethod,
+    previousPaidAmount: 0,
+    currentPayment: payload.amountReceived,
+    remainingBalance: 0,
+    advanceAmount: 0,
+    totalCommitteeAmount: payload.amountReceived,
+    totalPaidAmount: payload.amountReceived,
+    totalDueAmount: 0,
+    registrationFeeStatus: 'Paid',
+    notes: payload.notes || payload.installmentDescription || '',
+    generatedBy: payload.collectedBy,
+    verificationStatus: 'Verified',
+    createdAt: now,
+  };
+
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'payments', paymentId), paymentRecord);
+  batch.set(doc(db, 'receipts', receiptId), receiptRecord);
+
+  try {
+    await batch.commit();
+
+    await logAudit(
+      payload.collectedBy,
+      'STAFF',
+      'RECORD_PAYMENT',
+      'Payment',
+      paymentId,
+      `Manual Payment collected: ${payload.amountReceived} PKR from ${payload.memberName} via ${payload.paymentMethod}. Generated receipt ${receiptNumber}.`
+    );
+
+    return {
+      payment: paymentRecord,
+      receipt: receiptRecord,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'payments+receipts+manual');
+    throw error;
+  }
+}
+
 export async function getPayments(): Promise<Payment[]> {
   const path = 'payments';
   try {

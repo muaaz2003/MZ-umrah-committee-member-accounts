@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import {
   Users,
-  CalendarCheck,
   CalendarDays,
   HandCoins,
   AlertTriangle,
@@ -18,8 +17,6 @@ import {
   Smartphone,
   CreditCard,
   Banknote,
-  Download,
-  Printer,
   Search,
   Filter,
   RefreshCw,
@@ -57,7 +54,7 @@ interface DashboardPageProps {
   onNavigate: (page: string) => void;
 }
 
-type TimeFilter = 'all' | 'month' | 'week' | 'today';
+type TimeFilter = 'all' | 'month' | 'week';
 type ActiveTab = 'receipts' | 'overdue' | 'members';
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -87,9 +84,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     if (timeFilter === 'all') return payments;
 
     const now = new Date();
-    if (timeFilter === 'today') {
-      return payments.filter((p) => p.paymentDate && p.paymentDate.startsWith(todayDateStr));
-    }
     if (timeFilter === 'month') {
       return payments.filter((p) => p.paymentDate && p.paymentDate.startsWith(currentMonthStr));
     }
@@ -100,7 +94,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       return payments.filter((p) => p.paymentDate && p.paymentDate >= weekAgoStr);
     }
     return payments;
-  }, [payments, timeFilter, todayDateStr, currentMonthStr]);
+  }, [payments, timeFilter, currentMonthStr]);
 
   // Filtered Collection Amount for current time frame
   const periodCollectionTotal = useMemo(() => {
@@ -219,24 +213,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       .slice(0, 20); // Top 20 for responsive speed
   }, [receipts, receiptSearch, methodFilter]);
 
-  // CSV Export Handler
-  const handleExportCSV = () => {
-    let csvContent = 'data:text/csv;charset=utf-8,';
-    csvContent += 'Receipt No,Payment Date,Member Name,Member No,Qist No,Amount (PKR),Payment Method,Collector\n';
-
-    receipts.forEach((r) => {
-      csvContent += `"${r.receiptNumber}","${r.paymentDate}","${r.memberName}","${r.memberNumber}","${r.installmentNumber}","${r.amount}","${r.paymentMethod}","${r.generatedBy || 'Staff'}"\n`;
-    });
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `MZ_Umrah_Money_Records_${todayDateStr}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="space-y-6">
       {/* Top Banner with Executive Controls */}
@@ -261,37 +237,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
 
           {/* Action CTA Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onOpenQistWasool()}
-              className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-98"
+              className="px-3.5 sm:px-5 py-2 sm:py-3 bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold text-[11px] sm:text-xs uppercase tracking-wider rounded-lg sm:rounded-xl shadow-xs transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer active:scale-98"
             >
-              <HandCoins className="w-5 h-5" />
+              <HandCoins className="w-4 h-4 sm:w-5 sm:h-5" />
               <span>Qist Wasool Karein</span>
             </button>
 
             <button
               onClick={onOpenAddMember}
-              className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-xl transition-all flex items-center gap-2 border border-white/20 cursor-pointer"
+              className="px-3 sm:px-4 py-2 sm:py-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-[11px] sm:text-xs rounded-lg sm:rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 border border-white/20 cursor-pointer"
             >
-              <PlusCircle className="w-4 h-4 text-emerald-300" />
+              <PlusCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-300" />
               <span>Add Member</span>
-            </button>
-
-            <button
-              onClick={handleExportCSV}
-              className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20 cursor-pointer"
-              title="Export Money Records to CSV"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => window.print()}
-              className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20 cursor-pointer no-print"
-              title="Print Summary"
-            >
-              <Printer className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -332,16 +292,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               >
                 This Week (ہفتہ وار)
               </button>
-              <button
-                onClick={() => setTimeFilter('today')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                  timeFilter === 'today'
-                    ? 'bg-amber-500 text-emerald-950 shadow-xs'
-                    : 'text-emerald-200 hover:text-white'
-                }`}
-              >
-                Today (آج کی کلیکشن)
-              </button>
             </div>
           </div>
 
@@ -355,8 +305,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       </div>
 
-      {/* 5 Core Accounting Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      {/* 4 Core Accounting Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Committee Portfolio Value */}
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
           <div>
@@ -440,25 +390,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <span className="text-rose-600 font-semibold">{formatPKR(summary.totalRefundsAmount)}</span>
           </div>
         </div>
-
-        {/* Today's Collection */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                Today's Collection
-              </span>
-              <CalendarCheck className="w-4 h-4 text-emerald-700" />
-            </div>
-            <div className="text-xl sm:text-2xl font-bold text-gray-900 mt-2">
-              {formatPKR(summary.todayCollection)}
-            </div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
-            <span>Counter & Digital</span>
-            <span className="text-emerald-700 font-semibold">Active Cycle</span>
-          </div>
-        </div>
       </div>
 
       {/* Secondary Performance Strip */}
@@ -512,7 +443,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div>
               <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-emerald-700" />
-                <span>Monthly Money Inflow Trend (ماہانہ آمدنی و وصولی)</span>
+                <span>Monthly Money Inflow Trend (ماہانہ وصولی)</span>
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 Installment collection performance over recent 6-month cycles
@@ -814,46 +745,52 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Interactive Money Records & Ledger Tabs Section */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         {/* Navigation Tabs Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+        <div className="px-3 sm:px-6 py-2.5 sm:py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto w-full sm:w-auto scrollbar-none">
             <button
               onClick={() => setActiveTab('receipts')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0 sm:shrink flex-1 sm:flex-initial ${
                 activeTab === 'receipts'
                   ? 'bg-[#064E3B] text-white shadow-xs'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              <ReceiptIcon className="w-4 h-4" />
-              <span>Money Collections & Receipts ({receipts.length})</span>
+              <ReceiptIcon className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+              <span>
+                <span className="hidden md:inline">Money Collections & </span>Receipts ({receipts.length})
+              </span>
             </button>
 
             <button
               onClick={() => setActiveTab('overdue')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0 sm:shrink flex-1 sm:flex-initial ${
                 activeTab === 'overdue'
                   ? 'bg-rose-700 text-white shadow-xs'
                   : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
               }`}
             >
-              <AlertTriangle className="w-4 h-4" />
-              <span>Overdue Follow-ups ({overdueInstallments.length})</span>
+              <AlertTriangle className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+              <span>
+                Overdue<span className="hidden md:inline"> Follow-ups</span> ({overdueInstallments.length})
+              </span>
             </button>
 
             <button
               onClick={() => setActiveTab('members')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0 sm:shrink flex-1 sm:flex-initial ${
                 activeTab === 'members'
                   ? 'bg-[#064E3B] text-white shadow-xs'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              <Users className="w-4 h-4" />
-              <span>Featured Member Cards</span>
+              <Users className="w-3 h-3 sm:w-4 sm:h-4 shrink-0" />
+              <span>
+                <span className="hidden md:inline">Featured </span>Members
+              </span>
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end sm:justify-start gap-2">
             <button
               onClick={() => onNavigate('collection')}
               className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 cursor-pointer"

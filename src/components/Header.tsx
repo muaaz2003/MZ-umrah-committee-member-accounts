@@ -128,15 +128,15 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right side: Search, Admin controls */}
-      <div className="flex items-center gap-2.5 sm:gap-4">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         {/* If Admin is NOT logged in: Show Admin Login Button */}
         {!isAdminLoggedIn ? (
           <button
             type="button"
             onClick={onOpenAdminLogin}
-            className="px-3.5 sm:px-4 py-2 bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-98"
+            className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold text-[11px] sm:text-xs rounded-lg shadow-xs transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer active:scale-98"
           >
-            <Lock className="w-3.5 h-3.5" />
+            <Lock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span>Admin Login</span>
           </button>
         ) : (

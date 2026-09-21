@@ -234,7 +234,7 @@ export function App() {
 
   // Open Qist Wasool Modal - Instant response without blocking network requests
   const handleOpenQistWasool = (member?: Member, targetInstallment?: Installment) => {
-    const target = member || (members.length > 0 ? members[0] : null);
+    const target = member || null;
     setQistTargetMember(target);
     if (target) {
       // Instantly populate from in-memory state
@@ -544,6 +544,7 @@ export function App() {
         member={qistTargetMember}
         installments={qistTargetInstallments}
         allMembers={members}
+        allInstallments={installments}
         onPaymentSuccess={handlePaymentSuccess}
         staffName={currentUser.name}
       />
