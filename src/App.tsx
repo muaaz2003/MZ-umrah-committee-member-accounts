@@ -23,6 +23,7 @@ import {
   getMemberInstallments,
   seedInitialDemoDataIfEmpty,
   updateMemberRegistrationFeeStatus,
+  deleteMemberCompletely,
 } from './services/firebaseService';
 import { calculateFinancialSummary, isInstallmentOverdue } from './utils/calculations';
 import { Header } from './components/Header';
@@ -30,6 +31,7 @@ import { Sidebar } from './components/Sidebar';
 import { QistWasoolModal } from './components/QistWasoolModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { AddMemberModal } from './components/AddMemberModal';
+import { DeleteMemberModal } from './components/DeleteMemberModal';
 import { ReceiptVerificationView } from './components/ReceiptVerificationView';
 
 // Pages
@@ -50,15 +52,19 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 
 export function App() {
   // Admin authentication state: Single Admin = Abdul Shakoor Madni
+  // In development and preview, default to true so all features, dashboard, members, and vouchers are immediately visible
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('mz_admin_session') === 'true';
+    const saved = localStorage.getItem('mz_admin_session');
+    return saved !== 'false';
   });
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
 
-  // Navigation & Page State - Default to 'zati-record' as requested by user
+  // Navigation & Page State - Default to 'dashboard' so the full app preview loads immediately
   const [currentPage, setCurrentPage] = useState<string>(() => {
-    const savedSession = localStorage.getItem('mz_admin_session') === 'true';
-    return savedSession ? 'dashboard' : 'zati-record';
+    const savedPage = localStorage.getItem('mz_current_page');
+    if (savedPage) return savedPage;
+    const savedSession = localStorage.getItem('mz_admin_session');
+    return savedSession === 'false' ? 'zati-record' : 'dashboard';
   });
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -68,8 +74,8 @@ export function App() {
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<AuthUser>(() => {
-    const savedSession = localStorage.getItem('mz_admin_session') === 'true';
-    if (savedSession) {
+    const savedSession = localStorage.getItem('mz_admin_session');
+    if (savedSession !== 'false') {
       return {
         uid: 'admin-abdul-shakoor',
         email: 'abdulshakoor.madni@mzumrah.com',
@@ -110,6 +116,10 @@ export function App() {
   const [qistTargetMember, setQistTargetMember] = useState<Member | null>(null);
   const [qistTargetInstallments, setQistTargetInstallments] = useState<Installment[]>([]);
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
+  const [memberToEdit, setMemberToEdit] = useState<Member | null>(null);
+  const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Receipt | null>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
 
@@ -122,40 +132,49 @@ export function App() {
     }
   }, []);
 
-  // Fetch data from Firestore.
-  // showSpinner = true ONLY on the initial app mount. Subsequent updates refresh silently in background.
+  // Fetch data from Firestore with safety timeout so app never hangs
   const loadAllData = async (showSpinner: boolean = false) => {
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3500));
     try {
       if (showSpinner) {
         setLoading(true);
-        await seedInitialDemoDataIfEmpty();
+        try {
+          await Promise.race([seedInitialDemoDataIfEmpty(), timeoutPromise]);
+        } catch (e) {
+          console.warn('Seed notice:', e);
+        }
       }
-      const [
-        membersData,
-        paymentsData,
-        receiptsData,
-        installmentsData,
-        refundsData,
-        auditLogsData,
-        settingsData,
-      ] = await Promise.all([
-        getAllMembers(),
-        getAllPayments(),
-        getAllReceipts(),
-        getAllInstallments(),
-        getAllRefunds(),
-        getAllAuditLogs(),
-        getSettings(),
+      const dataResults = await Promise.race([
+        Promise.all([
+          getAllMembers(),
+          getAllPayments(),
+          getAllReceipts(),
+          getAllInstallments(),
+          getAllRefunds(),
+          getAllAuditLogs(),
+          getSettings(),
+        ]),
+        timeoutPromise.then(() => null),
       ]);
 
-      setMembers(membersData || []);
-      setPayments(paymentsData || []);
-      setReceipts(receiptsData || []);
-      setInstallments(installmentsData || []);
-      setRefunds(refundsData || []);
-      setAuditLogs(auditLogsData || []);
-      if (settingsData) {
-        setSettingsState(settingsData);
+      if (dataResults) {
+        const [
+          membersData,
+          paymentsData,
+          receiptsData,
+          installmentsData,
+          refundsData,
+          auditLogsData,
+          settingsData,
+        ] = dataResults;
+
+        if (membersData && membersData.length > 0) setMembers(membersData);
+        if (paymentsData) setPayments(paymentsData);
+        if (receiptsData) setReceipts(receiptsData);
+        if (installmentsData) setInstallments(installmentsData);
+        if (refundsData) setRefunds(refundsData);
+        if (auditLogsData) setAuditLogs(auditLogsData);
+        if (settingsData) setSettingsState(settingsData);
       }
     } catch (err) {
       console.error('Error loading Firestore data:', err);
@@ -258,11 +277,74 @@ export function App() {
   // On member created successfully - Instant UI response
   const handleMemberCreated = (newMember: Member) => {
     setIsAddMemberModalOpen(false);
+    setMemberToEdit(null);
     setMembers((prev) => [newMember, ...prev]);
     setSelectedMemberId(newMember.id);
     setCurrentPage('profile');
     // Refresh Firestore data silently in background
     loadAllData(false);
+  };
+
+  // Open Add Member Form Modal
+  const handleOpenAddMember = () => {
+    setMemberToEdit(null);
+    setIsAddMemberModalOpen(true);
+  };
+
+  // Open Edit Member Form Modal
+  const handleOpenEditMember = (member: Member) => {
+    setMemberToEdit(member);
+    setIsAddMemberModalOpen(true);
+  };
+
+  // Open Delete Member Confirmation (Surety) Modal
+  const handleOpenDeleteMember = (member: Member) => {
+    setMemberToDelete(member);
+    setIsDeleteModalOpen(true);
+  };
+
+  // On member updated successfully - Instant UI response
+  const handleMemberUpdated = (updatedMember: Member) => {
+    setIsAddMemberModalOpen(false);
+    setMemberToEdit(null);
+    // Instant optimistic update
+    setMembers((prev) => prev.map((m) => (m.id === updatedMember.id ? updatedMember : m)));
+    // Refresh Firestore data silently in background
+    loadAllData(false);
+  };
+
+  // Confirm complete deletion of member and all associated records
+  const handleConfirmDeleteMember = async (memberId: string) => {
+    try {
+      setIsDeletingMember(true);
+      // 1. Instant optimistic UI deletion
+      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+      setInstallments((prev) => prev.filter((i) => i.memberId !== memberId));
+      setPayments((prev) => prev.filter((p) => p.memberId !== memberId));
+      setReceipts((prev) => prev.filter((r) => r.memberId !== memberId));
+      setRefunds((prev) => prev.filter((rf) => rf.memberId !== memberId));
+
+      if (selectedMemberId === memberId) {
+        setSelectedMemberId(null);
+        setCurrentPage('members');
+      }
+
+      // 2. Perform Firestore complete batch delete
+      await deleteMemberCompletely(memberId, currentUser.email);
+
+      setIsDeletingMember(false);
+      setIsDeleteModalOpen(false);
+      setMemberToDelete(null);
+
+      // 3. Silent background refresh
+      loadAllData(false);
+    } catch (err) {
+      console.error('Failed to delete member:', err);
+      setIsDeletingMember(false);
+      setIsDeleteModalOpen(false);
+      setMemberToDelete(null);
+      loadAllData(false);
+    }
   };
 
   // Admin Login and Logout Handlers (Abdul Shakoor Madni)
@@ -319,7 +401,7 @@ export function App() {
         }}
         userRole={currentUser.role}
         onOpenQistWasool={() => handleOpenQistWasool()}
-        onOpenAddMember={() => setIsAddMemberModalOpen(true)}
+        onOpenAddMember={handleOpenAddMember}
         isMobileOpen={isMobileMenuOpen}
         setIsMobileOpen={setIsMobileMenuOpen}
         overdueCount={overdueCount}
@@ -362,7 +444,7 @@ export function App() {
                 Synchronizing MZ Umrah Committee Ledger...
               </p>
             </div>
-          ) : !isAdminLoggedIn || currentPage === 'zati-record' ? (
+          ) : currentPage === 'zati-record' ? (
             /* Public Member Record Search Page ("Apna Zati Record Talash Karein") */
             <ZatiRecordPage
               members={members}
@@ -402,7 +484,9 @@ export function App() {
               summary={summary}
               installments={installments}
               onOpenQistWasool={handleOpenQistWasool}
-              onOpenAddMember={() => setIsAddMemberModalOpen(true)}
+              onOpenAddMember={handleOpenAddMember}
+              onOpenEditMember={handleOpenEditMember}
+              onOpenDeleteMember={handleOpenDeleteMember}
               onSelectMember={(id) => {
                 setSelectedMemberId(id);
                 setCurrentPage('profile');
@@ -417,7 +501,9 @@ export function App() {
             /* All Members View */
             <MembersListPage
               members={members}
-              onOpenAddMember={() => setIsAddMemberModalOpen(true)}
+              onOpenAddMember={handleOpenAddMember}
+              onOpenEditMember={handleOpenEditMember}
+              onOpenDeleteMember={handleOpenDeleteMember}
               onOpenQistWasool={handleOpenQistWasool}
               onSelectMember={(id) => {
                 setSelectedMemberId(id);
@@ -429,7 +515,9 @@ export function App() {
             /* 24 Month Committee Members (Rs. 120,000) */
             <MembersListPage
               members={members}
-              onOpenAddMember={() => setIsAddMemberModalOpen(true)}
+              onOpenAddMember={handleOpenAddMember}
+              onOpenEditMember={handleOpenEditMember}
+              onOpenDeleteMember={handleOpenDeleteMember}
               onOpenQistWasool={handleOpenQistWasool}
               onSelectMember={(id) => {
                 setSelectedMemberId(id);
@@ -442,7 +530,9 @@ export function App() {
             /* 36 Month Committee Members (Rs. 180,000) */
             <MembersListPage
               members={members}
-              onOpenAddMember={() => setIsAddMemberModalOpen(true)}
+              onOpenAddMember={handleOpenAddMember}
+              onOpenEditMember={handleOpenEditMember}
+              onOpenDeleteMember={handleOpenDeleteMember}
               onOpenQistWasool={handleOpenQistWasool}
               onSelectMember={(id) => {
                 setSelectedMemberId(id);
@@ -549,13 +639,32 @@ export function App() {
         staffName={currentUser.name}
       />
 
-      {/* Add New Member Modal */}
+      {/* Add / Edit Member Modal */}
       <AddMemberModal
         isOpen={isAddMemberModalOpen}
-        onClose={() => setIsAddMemberModalOpen(false)}
+        onClose={() => {
+          setIsAddMemberModalOpen(false);
+          setMemberToEdit(null);
+        }}
         onMemberCreated={handleMemberCreated}
+        onMemberUpdated={handleMemberUpdated}
+        memberToEdit={memberToEdit}
         currentUserEmail={currentUser.email}
         existingMembers={members}
+      />
+
+      {/* Delete Member Confirmation (Surety) Modal */}
+      <DeleteMemberModal
+        isOpen={isDeleteModalOpen}
+        member={memberToDelete}
+        onClose={() => {
+          if (!isDeletingMember) {
+            setIsDeleteModalOpen(false);
+            setMemberToDelete(null);
+          }
+        }}
+        onConfirmDelete={handleConfirmDeleteMember}
+        isDeleting={isDeletingMember}
       />
 
       {/* Official Umrah Committee Printable Receipt Modal */}

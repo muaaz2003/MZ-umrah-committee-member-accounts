@@ -594,10 +594,10 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
               </div>
 
               {/* Grid of Inputs with Urdu Nastaliq & English Subtitle */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-2.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 text-xs">
                 {/* 1. نام ممبر */}
                 <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     نام ممبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Member Name)</span>
                   </label>
                   <input
@@ -608,14 +608,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       setSalutationName(e.target.value);
                     }}
                     placeholder="ممبر کا مکمل نام..."
-                    className="w-full px-2 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full px-2.5 py-1.5 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
 
                 {/* 2. ولدیت */}
                 <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     ولد / زوجہ: <span className="text-[10px] font-sans font-normal text-slate-500">(Father / Husband)</span>
                   </label>
                   <input
@@ -626,14 +626,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       setSalutationFather(e.target.value);
                     }}
                     placeholder="والد یا شوہر کا نام..."
-                    className="w-full px-2 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full px-2.5 py-1.5 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
 
                 {/* 3. شناختی کارڈ نمبر */}
                 <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     شناختی کارڈ نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(CNIC Number)</span>
                   </label>
                   <input
@@ -642,13 +642,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setCnic(e.target.value)}
                     placeholder="42401-XXXXXXX-X"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2.5 py-1.5 text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
                   />
                 </div>
 
                 {/* 4. ممبر شپ نمبر */}
                 <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     ممبر شپ نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Membership #)</span>
                   </label>
                   <input
@@ -657,13 +657,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setMemberNumber(e.target.value)}
                     placeholder="#FGN-085"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-rose-700 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2.5 py-1.5 text-rose-700 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
                   />
                 </div>
 
                 {/* 5. گروپ نمبر */}
                 <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     گروپ نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Group #)</span>
                   </label>
                   <input
@@ -672,13 +672,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setGroupNumber(e.target.value)}
                     placeholder="#FGN-078"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-slate-800 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2.5 py-1.5 text-slate-800 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
                   />
                 </div>
 
                 {/* 6. فون نمبر */}
                 <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     فون نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Contact / Mobile)</span>
                   </label>
                   <input
@@ -687,13 +687,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="0300XXXXXXX"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2.5 py-1.5 text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
                   />
                 </div>
 
                 {/* 7. رہائشی پتہ */}
                 <div className="sm:col-span-2">
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     مکان نمبر و رہائشی پتہ: <span className="text-[10px] font-sans font-normal text-slate-500">(Residential Address)</span>
                   </label>
                   <input
@@ -701,14 +701,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="مکان نمبر، بلاک، گلی، کالونی، شہر..."
-                    className="w-full px-2 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full px-2.5 py-1.5 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
 
                 {/* 8. علاقہ */}
                 <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                  <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq-tight text-xs" dir="rtl">
                     علاقہ / تحصیل: <span className="text-[10px] font-sans font-normal text-slate-500">(Area / Town)</span>
                   </label>
                   <input
@@ -716,7 +716,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     value={area}
                     onChange={(e) => setArea(e.target.value)}
                     placeholder="علاقہ مثلاً گلشن بہار، اورنگی..."
-                    className="w-full px-2 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full px-2.5 py-1.5 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
@@ -775,7 +775,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                 {/* Amount in English and Urdu Words */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs" dir="ltr">
                   <div>
-                    <label className="block text-slate-600 font-semibold mb-0.5 text-[10px] sm:text-[11px]">
+                    <label className="block text-slate-600 font-semibold mb-2 text-[10px] sm:text-[11px]">
                       Amount in Words (English):
                     </label>
                     <input
@@ -783,11 +783,11 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       value={amountInWordsEnglish}
                       onChange={(e) => setAmountInWordsEnglish(e.target.value)}
                       placeholder="One Hundred Twenty Thousand Rupees Only"
-                      className="w-full px-2 py-0.5 font-medium border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 font-semibold"
+                      className="w-full px-2 py-1 font-medium border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 font-semibold"
                     />
                   </div>
                   <div dir="rtl">
-                    <label className="block text-right text-slate-700 font-bold mb-0.5 font-nastaliq-tight text-xs">
+                    <label className="block text-right text-slate-700 font-bold mb-2 font-nastaliq-tight text-xs">
                       رقم بلحاظ الفاظ (اردو نستعلیق):
                     </label>
                     <input
@@ -795,7 +795,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       value={amountInWordsUrdu}
                       onChange={(e) => setAmountInWordsUrdu(e.target.value)}
                       placeholder="ایک لاکھ بیس ہزار روپے فقط"
-                      className="w-full px-2 py-0.5 font-bold font-nastaliq border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 text-right"
+                      className="w-full px-2 py-1 font-bold font-nastaliq border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 text-right"
                     />
                   </div>
                 </div>
@@ -829,7 +829,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
               {/* Refund Description / Qist Details */}
               <div className="my-1.5 sm:my-2 bg-white p-2 sm:p-2.5 rounded-xl border-2 border-emerald-600/30 shadow-xs space-y-1" dir="rtl">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-2">
                   <label className="block text-right font-bold text-[#064E3B] font-nastaliq text-xs">
                     تفصیل برائے ریفنڈ / کونسی قسط ہے:
                   </label>
@@ -865,7 +865,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
               {/* Member Feedback Field */}
               <div className="pt-0.5">
-                <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq text-xs">
+                <label className="block text-right font-bold text-slate-800 mb-2 font-nastaliq text-xs">
                   برائے مہربانی اپنی رائے / اطمینان تحریر فرمائیں:
                 </label>
                 <input
@@ -873,7 +873,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   value={memberFeedback}
                   onChange={(e) => setMemberFeedback(e.target.value)}
                   placeholder="اپنی رائے یا تاثرات تحریر فرمائیں..."
-                  className="w-full px-2.5 py-1 text-slate-900 border border-amber-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-xs"
+                  className="w-full px-2.5 py-1.5 text-slate-900 border border-amber-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-xs"
                 />
               </div>
 

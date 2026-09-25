@@ -24,6 +24,11 @@
   box-sizing: border-box;
 }
 
+#pdf-voucher-container label {
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
 #pdf-voucher-container input,
 #pdf-voucher-container textarea {
   line-height: 1.25;

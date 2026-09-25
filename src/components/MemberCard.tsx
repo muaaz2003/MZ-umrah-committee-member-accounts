@@ -7,6 +7,7 @@ import {
   HandCoins,
   ReceiptText,
   Edit,
+  Trash2,
   AlertCircle,
   CheckCircle2,
   Clock,
@@ -21,6 +22,7 @@ interface MemberCardProps {
   onOpenQistWasool: (member: Member) => void;
   onViewProfile: (memberId: string) => void;
   onEditMember?: (member: Member) => void;
+  onDeleteMember?: (member: Member) => void;
   userRole?: string;
 }
 
@@ -29,6 +31,7 @@ export const MemberCard: React.FC<MemberCardProps> = ({
   onOpenQistWasool,
   onViewProfile,
   onEditMember,
+  onDeleteMember,
   userRole,
 }) => {
   const isCompleted = member.status === 'Completed' || member.paidAmount >= member.totalCommitteeAmount;
@@ -190,22 +193,35 @@ export const MemberCard: React.FC<MemberCardProps> = ({
           </button>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`grid gap-1.5 ${userRole !== 'MEMBER' && (onEditMember || onDeleteMember) ? 'grid-cols-3' : 'grid-cols-1'}`}>
           <button
             onClick={() => onViewProfile(member.id)}
-            className="w-full py-2 px-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 flex items-center justify-center gap-1.5 transition-colors"
+            className="w-full py-1.5 px-2 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+            title="View Member Ledger"
           >
-            <ReceiptText className="w-3.5 h-3.5 text-emerald-700" />
-            <span>View Ledger</span>
+            <ReceiptText className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+            <span className="truncate">Ledger</span>
           </button>
 
           {userRole !== 'MEMBER' && onEditMember && (
             <button
               onClick={() => onEditMember(member)}
-              className="w-full py-2 px-3 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 flex items-center justify-center gap-1.5 transition-colors"
+              className="w-full py-1.5 px-2 bg-white hover:bg-emerald-50 border border-emerald-300 rounded-lg text-[11px] font-bold text-emerald-800 flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95"
+              title="Edit Member Information (نام وغیرہ تبدیل کریں)"
             >
-              <Edit className="w-3.5 h-3.5 text-gray-500" />
-              <span>Edit</span>
+              <Edit className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="truncate">Edit</span>
+            </button>
+          )}
+
+          {userRole !== 'MEMBER' && onDeleteMember && (
+            <button
+              onClick={() => onDeleteMember(member)}
+              className="w-full py-1.5 px-2 bg-white hover:bg-rose-50 border border-rose-300 rounded-lg text-[11px] font-bold text-rose-700 flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95"
+              title="Delete Member (ڈیلیٹ ممبر)"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+              <span className="truncate">Delete</span>
             </button>
           )}
         </div>

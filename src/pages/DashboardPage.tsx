@@ -52,6 +52,8 @@ interface DashboardPageProps {
   onSelectMember: (memberId: string) => void;
   onOpenReceipt: (receipt: Receipt) => void;
   onNavigate: (page: string) => void;
+  onOpenEditMember?: (member: Member) => void;
+  onOpenDeleteMember?: (member: Member) => void;
 }
 
 type TimeFilter = 'all' | 'month' | 'week';
@@ -69,6 +71,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onSelectMember,
   onOpenReceipt,
   onNavigate,
+  onOpenEditMember,
+  onOpenDeleteMember,
 }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [activeTab, setActiveTab] = useState<ActiveTab>('receipts');
@@ -1017,6 +1021,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   member={member}
                   onViewProfile={(id) => onSelectMember(id)}
                   onOpenQistWasool={(m) => onOpenQistWasool(m)}
+                  onEditMember={onOpenEditMember}
+                  onDeleteMember={onOpenDeleteMember}
                   userRole="ADMIN"
                 />
               ))}

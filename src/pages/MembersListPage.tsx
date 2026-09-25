@@ -11,6 +11,8 @@ import {
   ReceiptText,
   HandCoins,
   CheckCircle2,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import { Member, UserRole } from '../types';
 import { MemberCard } from '../components/MemberCard';
@@ -19,6 +21,8 @@ import { formatPKR, formatDateDisplay } from '../utils/calculations';
 interface MembersListPageProps {
   members: Member[];
   onOpenAddMember: () => void;
+  onOpenEditMember?: (member: Member) => void;
+  onOpenDeleteMember?: (member: Member) => void;
   onOpenQistWasool: (member: Member) => void;
   onSelectMember: (memberId: string) => void;
   userRole: UserRole;
@@ -28,6 +32,8 @@ interface MembersListPageProps {
 export const MembersListPage: React.FC<MembersListPageProps> = ({
   members,
   onOpenAddMember,
+  onOpenEditMember,
+  onOpenDeleteMember,
   onOpenQistWasool,
   onSelectMember,
   userRole,
@@ -166,6 +172,8 @@ export const MembersListPage: React.FC<MembersListPageProps> = ({
               member={member}
               onOpenQistWasool={() => onOpenQistWasool(member)}
               onViewProfile={() => onSelectMember(member.id)}
+              onEditMember={onOpenEditMember}
+              onDeleteMember={onOpenDeleteMember}
               userRole={userRole}
             />
           ))}
@@ -226,7 +234,7 @@ export const MembersListPage: React.FC<MembersListPageProps> = ({
                       {userRole !== 'MEMBER' && m.status === 'Active' && (
                         <button
                           onClick={() => onOpenQistWasool(m)}
-                          className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-bold flex items-center gap-1"
+                          className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                         >
                           <HandCoins className="w-3 h-3 text-amber-300" />
                           <span>Wasool</span>
@@ -234,10 +242,30 @@ export const MembersListPage: React.FC<MembersListPageProps> = ({
                       )}
                       <button
                         onClick={() => onSelectMember(m.id)}
-                        className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[11px] font-semibold text-slate-700"
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[11px] font-semibold text-slate-700 cursor-pointer"
                       >
                         Ledger
                       </button>
+                      {userRole !== 'MEMBER' && onOpenEditMember && (
+                        <button
+                          onClick={() => onOpenEditMember(m)}
+                          className="px-2 py-1 bg-white hover:bg-emerald-50 border border-emerald-300 rounded text-[11px] font-semibold text-emerald-700 flex items-center gap-1 cursor-pointer"
+                          title="Edit Member (نام وغیرہ تبدیل کریں)"
+                        >
+                          <Edit className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+                      {userRole !== 'MEMBER' && onOpenDeleteMember && (
+                        <button
+                          onClick={() => onOpenDeleteMember(m)}
+                          className="px-2 py-1 bg-white hover:bg-rose-50 border border-rose-300 rounded text-[11px] font-semibold text-rose-700 flex items-center gap-1 cursor-pointer"
+                          title="Delete Member (حذف کریں)"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete</span>
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

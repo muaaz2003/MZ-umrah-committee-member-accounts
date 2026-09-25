@@ -20,13 +20,15 @@ import {
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import { Member, MemberStatus } from '../types';
-import { getNextMembershipNumber, createMember } from '../services/firebaseService';
+import { getNextMembershipNumber, createMember, updateMember } from '../services/firebaseService';
 import { DEFAULT_MONTHLY_INSTALLMENT, PLAN_A_TOTAL, PLAN_B_TOTAL, formatPKR } from '../utils/calculations';
 
 interface AddMemberModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onMemberCreated: (member: Member) => void;
+  onMemberCreated?: (member: Member) => void;
+  onMemberUpdated?: (member: Member) => void;
+  memberToEdit?: Member | null;
   currentUserEmail: string;
   existingMembers?: Member[];
 }
@@ -35,6 +37,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   isOpen,
   onClose,
   onMemberCreated,
+  onMemberUpdated,
+  memberToEdit,
   currentUserEmail,
   existingMembers = [],
 }) => {
@@ -168,24 +172,71 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
     }
   };
 
-  // Instant local calculation of next membership number to avoid click delay
+  // Populate form if editing existing member, or generate next member number for new member
   useEffect(() => {
     if (isOpen) {
-      if (existingMembers && existingMembers.length > 0) {
-        let maxNumber = 1;
-        for (const m of existingMembers) {
-          const match = m.memberNumber?.match(/MZ-#(\d+)/);
-          if (match) {
-            const num = parseInt(match[1], 10);
-            if (num >= maxNumber) maxNumber = num + 1;
-          }
-        }
-        setMemberNumber(`MZ-#${String(maxNumber).padStart(3, '0')}`);
+      if (memberToEdit) {
+        // Edit mode - prefill existing member info
+        setMemberNumber(memberToEdit.memberNumber || 'MZ-#001');
+        setFullName(memberToEdit.fullName || '');
+        setFatherName(memberToEdit.fatherName || '');
+        setCnic(memberToEdit.cnic || '');
+        setMobile(memberToEdit.mobile || '');
+        setWhatsapp(memberToEdit.whatsapp || memberToEdit.mobile || '');
+        setAddress(memberToEdit.address || '');
+        setJoiningDate(memberToEdit.joiningDate || '2027-01-01');
+        setPlanMonths(memberToEdit.planMonths === 36 ? 36 : 24);
+        setMonthlyInstallment(memberToEdit.monthlyInstallment || 5000);
+        setRegistrationFee(memberToEdit.registrationFee ?? 1000);
+        setNomineeName(memberToEdit.nomineeName || '');
+        setNomineeRelation(memberToEdit.nomineeRelation || '');
+        setNomineeCnic(memberToEdit.nomineeCnic || '');
+        setNomineeMobile(memberToEdit.nomineeMobile || '');
+        setNotes(memberToEdit.notes || '');
+        setStatus(memberToEdit.status || 'Active');
+        setMemberPhoto(memberToEdit.memberPhoto || '');
+        setMemberAgreement(true);
+        setGuarantorAgreement(true);
+        setErrorMessage('');
       } else {
-        getNextMembershipNumber().then((num) => setMemberNumber(num));
+        // New member mode - reset form
+        setFullName('');
+        setFatherName('');
+        setCnic('');
+        setMobile('');
+        setWhatsapp('');
+        setAddress('');
+        setJoiningDate('2027-01-01');
+        setPlanMonths(24);
+        setMonthlyInstallment(5000);
+        setRegistrationFee(1000);
+        setNomineeName('');
+        setNomineeRelation('');
+        setNomineeCnic('');
+        setNomineeMobile('');
+        setNotes('');
+        setStatus('Active');
+        setMemberPhoto('');
+        setMemberAgreement(true);
+        setGuarantorAgreement(true);
+        setErrorMessage('');
+
+        if (existingMembers && existingMembers.length > 0) {
+          let maxNumber = 1;
+          for (const m of existingMembers) {
+            const match = m.memberNumber?.match(/MZ-#(\d+)/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (num >= maxNumber) maxNumber = num + 1;
+            }
+          }
+          setMemberNumber(`MZ-#${String(maxNumber).padStart(3, '0')}`);
+        } else {
+          getNextMembershipNumber().then((num) => setMemberNumber(num));
+        }
       }
     }
-  }, [isOpen, existingMembers]);
+  }, [isOpen, memberToEdit, existingMembers]);
 
   // Lock background body scroll when modal is open so only the form scrolls
   useEffect(() => {
@@ -270,9 +321,11 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
     try {
       setIsSubmitting(true);
-      const newMember = await createMember(
-        {
-          memberNumber,
+      if (memberToEdit) {
+        // UPDATE EXISTING MEMBER
+        const updatedTotal = planMonths * finalMonthly;
+        const updatedDue = Math.max(0, updatedTotal - (memberToEdit.paidAmount || 0));
+        const updatedData: Partial<Member> = {
           fullName: fullName.trim(),
           fatherName: fatherName.trim(),
           cnic: cnic.trim(),
@@ -282,9 +335,9 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           joiningDate,
           planMonths,
           monthlyInstallment: finalMonthly,
-          totalCommitteeAmount: planMonths * finalMonthly,
+          totalCommitteeAmount: updatedTotal,
+          dueAmount: updatedDue,
           registrationFee: Number(registrationFee) || 0,
-          registrationFeeStatus: (Number(registrationFee) > 0 ? 'Paid' : 'Unpaid'),
           nomineeName: nomineeName.trim(),
           nomineeRelation: nomineeRelation.trim(),
           nomineeCnic: nomineeCnic.trim(),
@@ -292,17 +345,58 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           status,
           notes: notes.trim(),
           memberPhoto: memberPhoto || undefined,
-        },
-        currentUserEmail
-      );
+        };
 
-      setIsSubmitting(false);
-      onClose();
-      onMemberCreated(newMember);
+        await updateMember(memberToEdit.id, updatedData, currentUserEmail);
+        const updatedFullMember: Member = {
+          ...memberToEdit,
+          ...updatedData,
+          updatedAt: new Date().toISOString(),
+        };
+
+        setIsSubmitting(false);
+        onClose();
+        if (onMemberUpdated) {
+          onMemberUpdated(updatedFullMember);
+        }
+      } else {
+        // CREATE NEW MEMBER
+        const newMember = await createMember(
+          {
+            memberNumber,
+            fullName: fullName.trim(),
+            fatherName: fatherName.trim(),
+            cnic: cnic.trim(),
+            mobile: mobile.trim(),
+            whatsapp: whatsapp.trim() || mobile.trim(),
+            address: address.trim(),
+            joiningDate,
+            planMonths,
+            monthlyInstallment: finalMonthly,
+            totalCommitteeAmount: planMonths * finalMonthly,
+            registrationFee: Number(registrationFee) || 0,
+            registrationFeeStatus: (Number(registrationFee) > 0 ? 'Paid' : 'Unpaid'),
+            nomineeName: nomineeName.trim(),
+            nomineeRelation: nomineeRelation.trim(),
+            nomineeCnic: nomineeCnic.trim(),
+            nomineeMobile: nomineeMobile.trim(),
+            status,
+            notes: notes.trim(),
+            memberPhoto: memberPhoto || undefined,
+          },
+          currentUserEmail
+        );
+
+        setIsSubmitting(false);
+        onClose();
+        if (onMemberCreated) {
+          onMemberCreated(newMember);
+        }
+      }
     } catch (err: any) {
-      console.error('Error creating member:', err);
+      console.error('Error saving member:', err);
       setIsSubmitting(false);
-      setErrorMessage(err.message || 'Could not register member. Please try again.');
+      setErrorMessage(err.message || 'Could not save member details. Please try again.');
     }
   };
 
@@ -318,8 +412,10 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         <div className="relative bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-4 text-white flex items-center justify-center shrink-0 shadow-md border-b border-emerald-800/60">
           <div className="text-center px-8" dir="rtl">
             <h3 className="font-black text-base sm:text-xl md:text-2xl tracking-wide text-white flex items-center justify-center flex-wrap gap-2">
-              <span>نئی ممبر رجسٹریشن فارم</span>{' '}
-              <bdi dir="ltr" className="text-amber-300 font-bold text-sm sm:text-lg font-sans">(New Member Registration Form)</bdi>
+              <span>{memberToEdit ? 'ممبر کی تفصیلات میں ترمیم' : 'نئی ممبر رجسٹریشن فارم'}</span>{' '}
+              <bdi dir="ltr" className="text-amber-300 font-bold text-sm sm:text-lg font-sans">
+                {memberToEdit ? '(Edit Member Details)' : '(New Member Registration Form)'}
+              </bdi>
             </h3>
           </div>
           <button
@@ -803,7 +899,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
               </span>
             </div>
             <p className="text-xs sm:text-sm text-emerald-950 leading-relaxed font-medium bg-white/90 p-3.5 rounded-xl border border-emerald-100 shadow-2xs">
-              ”میں اقرار کرتاہوں کہ اس فارم کو بغور پڑھااوراس فارم  میں جوکچھ تحریرکی ہے سب کچھ درست ہے ، ان شاء اللہ ہرماہ کی واجب الادارقم پابندی سے اداکرونگا،اور اس کمیٹی کامقصدکوپوراکرتے ہوئے شکایت کا موقع نہیں دونگا۔“
+              ”میں اقرار کرتاہوں کہ اس فارم کو بغور پڑھااوراس فارم  میں جوکچھ تحریرکی ہے سب کچھ درست ہے ، ان شاء اللہ ہرماہ کی واجب الادارقم پابندی سے اداکرونگا،اور اس کمیٹی کامقصدکوپوراکرتے ہوئے شکایت کا موقع نہیں دونگا/دونگی۔“
             </p>
             <label className="flex items-center gap-2 cursor-pointer select-none pt-0.5">
               <input
@@ -979,11 +1075,13 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                 className="px-5 sm:px-6 py-2.5 bg-emerald-800 hover:bg-emerald-900 active:scale-98 disabled:bg-emerald-400 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer font-urdu"
               >
                 {isSubmitting ? (
-                  <span>رجسٹریشن جاری ہے... (Registering...)</span>
+                  <span>{memberToEdit ? 'محفوظ کیا جا رہا ہے... (Saving...)' : 'رجسٹریشن جاری ہے... (Registering...)'}</span>
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
-                    <span>نیا ممبر رجسٹر کریں ({planMonths} ماہ اقساط)</span>
+                    <span>
+                      {memberToEdit ? 'تبدیلیاں محفوظ کریں (Save Changes)' : `نیا ممبر رجسٹر کریں (${planMonths} ماہ اقساط)`}
+                    </span>
                   </>
                 )}
               </button>
@@ -1140,7 +1238,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
               <h5 className="font-black text-emerald-950 mb-1">عہد نامہ برائے ممبر:</h5>
               <p className="text-emerald-900 leading-relaxed text-[10px]">
-                ”میں اقرار کرتاہوں کہ اس فارم کو بغور پڑھااوراس فارم میں جوکچھ تحریرکی ہے سب کچھ درست ہے ، ان شاء اللہ ہرماہ کی واجب الادارقم پابندی سے اداکرونگا،اور اس کمیٹی کامقصدکوپوراکرتے ہوئے شکایت کا موقع نہیں دونگا۔“
+                ”میں اقرار کرتاہوں کہ اس فارم کو بغور پڑھااوراس فارم میں جوکچھ تحریرکی ہے سب کچھ درست ہے ، ان شاء اللہ ہرماہ کی واجب الادارقم پابندی سے اداکرونگا،اور اس کمیٹی کامقصدکوپوراکرتے ہوئے شکایت کا موقع نہیں دونگا/دونگی۔“
               </p>
             </div>
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">

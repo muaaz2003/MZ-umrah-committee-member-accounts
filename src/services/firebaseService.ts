@@ -5,6 +5,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   orderBy,
   where,
@@ -322,6 +323,58 @@ export async function updateMember(
     await logAudit(userEmail, 'ADMIN', 'UPDATE_MEMBER', 'Member', memberId, `Updated member profile details`);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteMemberCompletely(
+  memberId: string,
+  userEmail: string = 'admin'
+): Promise<{ success: boolean; message: string }> {
+  const path = `members/${memberId}`;
+  try {
+    // 1. Fetch existing member data for informative audit logging
+    const memberDocRef = doc(db, 'members', memberId);
+    const snap = await getDoc(memberDocRef);
+    const memberData = snap.exists() ? (snap.data() as Member) : null;
+    const memberName = memberData?.fullName || memberId;
+    const memberNum = memberData?.memberNumber || '';
+
+    // 2. Batch delete all associated records (installments, payments, receipts, refunds)
+    const batch = writeBatch(db);
+
+    const [instSnap, paySnap, recSnap, refSnap] = await Promise.all([
+      getDocs(query(collection(db, 'installments'), where('memberId', '==', memberId))),
+      getDocs(query(collection(db, 'payments'), where('memberId', '==', memberId))),
+      getDocs(query(collection(db, 'receipts'), where('memberId', '==', memberId))),
+      getDocs(query(collection(db, 'refunds'), where('memberId', '==', memberId))),
+    ]);
+
+    instSnap.forEach((d) => batch.delete(d.ref));
+    paySnap.forEach((d) => batch.delete(d.ref));
+    recSnap.forEach((d) => batch.delete(d.ref));
+    refSnap.forEach((d) => batch.delete(d.ref));
+
+    // Delete the member document itself
+    batch.delete(memberDocRef);
+
+    await batch.commit();
+
+    // 3. Log audit event
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'DELETE_MEMBER',
+      'Member',
+      memberId,
+      `Permanently deleted member ${memberName} (${memberNum}) and all related records.`
+    );
+
+    return {
+      success: true,
+      message: `ممبر ${memberName} اور ان کے تمام ریکارڈز کامیابی سے حذف کر دیے گئے۔`,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
