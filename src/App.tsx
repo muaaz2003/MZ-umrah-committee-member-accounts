@@ -24,6 +24,7 @@ import {
   seedInitialDemoDataIfEmpty,
   updateMemberRegistrationFeeStatus,
   deleteMemberCompletely,
+  DEFAULT_SETTINGS,
 } from './services/firebaseService';
 import { calculateFinancialSummary, isInstallmentOverdue } from './utils/calculations';
 import { Header } from './components/Header';
@@ -52,19 +53,15 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 
 export function App() {
   // Admin authentication state: Single Admin = Abdul Shakoor Madni
-  // In development and preview, default to true so all features, dashboard, members, and vouchers are immediately visible
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    const saved = localStorage.getItem('mz_admin_session');
-    return saved !== 'false';
+    return localStorage.getItem('mz_admin_session') === 'true';
   });
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
 
-  // Navigation & Page State - Default to 'dashboard' so the full app preview loads immediately
+  // Navigation & Page State - Default to 'zati-record' as requested by user
   const [currentPage, setCurrentPage] = useState<string>(() => {
-    const savedPage = localStorage.getItem('mz_current_page');
-    if (savedPage) return savedPage;
-    const savedSession = localStorage.getItem('mz_admin_session');
-    return savedSession === 'false' ? 'zati-record' : 'dashboard';
+    const savedSession = localStorage.getItem('mz_admin_session') === 'true';
+    return savedSession ? 'dashboard' : 'zati-record';
   });
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -74,8 +71,8 @@ export function App() {
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<AuthUser>(() => {
-    const savedSession = localStorage.getItem('mz_admin_session');
-    if (savedSession !== 'false') {
+    const savedSession = localStorage.getItem('mz_admin_session') === 'true';
+    if (savedSession) {
       return {
         uid: 'admin-abdul-shakoor',
         email: 'abdulshakoor.madni@mzumrah.com',
@@ -98,17 +95,7 @@ export function App() {
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [settings, setSettingsState] = useState<CommitteeSettings>({
-    organizationName: 'M.Z.A Welfare Pakistan',
-    establishedYear: 2019,
-    committeeName: 'MZ Umrah Committee',
-    receiptPrefix: 'MZ-RCP-',
-    membershipPrefix: 'MZ-#',
-    defaultMonthlyInstallment: 5000,
-    defaultRegistrationFee: 1000,
-    fixedDueDay: 15,
-    authorizedSignatoryTitle: 'General Secretary',
-  });
+  const [settings, setSettingsState] = useState<CommitteeSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
   // Modals
@@ -132,49 +119,40 @@ export function App() {
     }
   }, []);
 
-  // Fetch data from Firestore with safety timeout so app never hangs
+  // Fetch data from Firestore.
+  // showSpinner = true ONLY on the initial app mount. Subsequent updates refresh silently in background.
   const loadAllData = async (showSpinner: boolean = false) => {
-    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 3500));
     try {
       if (showSpinner) {
         setLoading(true);
-        try {
-          await Promise.race([seedInitialDemoDataIfEmpty(), timeoutPromise]);
-        } catch (e) {
-          console.warn('Seed notice:', e);
-        }
+        await seedInitialDemoDataIfEmpty();
       }
-      const dataResults = await Promise.race([
-        Promise.all([
-          getAllMembers(),
-          getAllPayments(),
-          getAllReceipts(),
-          getAllInstallments(),
-          getAllRefunds(),
-          getAllAuditLogs(),
-          getSettings(),
-        ]),
-        timeoutPromise.then(() => null),
+      const [
+        membersData,
+        paymentsData,
+        receiptsData,
+        installmentsData,
+        refundsData,
+        auditLogsData,
+        settingsData,
+      ] = await Promise.all([
+        getAllMembers(),
+        getAllPayments(),
+        getAllReceipts(),
+        getAllInstallments(),
+        getAllRefunds(),
+        getAllAuditLogs(),
+        getSettings(),
       ]);
 
-      if (dataResults) {
-        const [
-          membersData,
-          paymentsData,
-          receiptsData,
-          installmentsData,
-          refundsData,
-          auditLogsData,
-          settingsData,
-        ] = dataResults;
-
-        if (membersData && membersData.length > 0) setMembers(membersData);
-        if (paymentsData) setPayments(paymentsData);
-        if (receiptsData) setReceipts(receiptsData);
-        if (installmentsData) setInstallments(installmentsData);
-        if (refundsData) setRefunds(refundsData);
-        if (auditLogsData) setAuditLogs(auditLogsData);
-        if (settingsData) setSettingsState(settingsData);
+      setMembers(membersData || []);
+      setPayments(paymentsData || []);
+      setReceipts(receiptsData || []);
+      setInstallments(installmentsData || []);
+      setRefunds(refundsData || []);
+      setAuditLogs(auditLogsData || []);
+      if (settingsData) {
+        setSettingsState(settingsData);
       }
     } catch (err) {
       console.error('Error loading Firestore data:', err);
@@ -444,7 +422,7 @@ export function App() {
                 Synchronizing MZ Umrah Committee Ledger...
               </p>
             </div>
-          ) : currentPage === 'zati-record' ? (
+          ) : !isAdminLoggedIn || currentPage === 'zati-record' ? (
             /* Public Member Record Search Page ("Apna Zati Record Talash Karein") */
             <ZatiRecordPage
               members={members}
@@ -472,7 +450,7 @@ export function App() {
               }}
               userRole={currentUser.role}
               currentUserEmail={currentUser.email}
-              onRefreshMember={loadAllData}
+              onRefreshMember={() => loadAllData(false)}
             />
           ) : currentPage === 'dashboard' ? (
             /* Dashboard View */

@@ -62,11 +62,12 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
   });
 
   // Aggregated Stats
-  const totalAmount = filtered.reduce((sum, p) => sum + p.amount, 0);
-  const cashAmount = filtered.filter((p) => p.paymentMethod === 'Cash').reduce((sum, p) => sum + p.amount, 0);
-  const easyPaisaAmount = filtered.filter((p) => p.paymentMethod === 'EasyPaisa').reduce((sum, p) => sum + p.amount, 0);
-  const jazzCashAmount = filtered.filter((p) => p.paymentMethod === 'JazzCash').reduce((sum, p) => sum + p.amount, 0);
-  const otherAmount = filtered.filter((p) => p.paymentMethod === 'Other').reduce((sum, p) => sum + p.amount, 0);
+  const getPaymentAmt = (p: Payment) => p.amountReceived || p.amount || 0;
+  const totalAmount = filtered.reduce((sum, p) => sum + getPaymentAmt(p), 0);
+  const cashAmount = filtered.filter((p) => p.paymentMethod === 'Cash').reduce((sum, p) => sum + getPaymentAmt(p), 0);
+  const easyPaisaAmount = filtered.filter((p) => p.paymentMethod === 'EasyPaisa').reduce((sum, p) => sum + getPaymentAmt(p), 0);
+  const jazzCashAmount = filtered.filter((p) => p.paymentMethod === 'JazzCash').reduce((sum, p) => sum + getPaymentAmt(p), 0);
+  const otherAmount = filtered.filter((p) => p.paymentMethod === 'Other').reduce((sum, p) => sum + getPaymentAmt(p), 0);
   const count = filtered.length;
   const avgAmount = count > 0 ? Math.round(totalAmount / count) : 0;
 
@@ -281,7 +282,7 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
                       {p.referenceNumber || '—'}
                     </td>
                     <td className="py-3.5 px-5 text-right font-black text-emerald-900 text-sm">
-                      {formatPKR(p.amount)}
+                      {formatPKR(p.amountReceived || p.amount || 0)}
                     </td>
                     <td className="py-3.5 px-5 text-slate-600 text-[11px]">
                       {p.collectedBy || 'Staff'}

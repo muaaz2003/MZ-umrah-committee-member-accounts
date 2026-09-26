@@ -29,6 +29,7 @@ export interface Member {
   status: MemberStatus;
   notes: string;
   memberPhoto?: string;
+  groupNumber?: string;
   linkedUserId?: string;
   createdAt: string;
   updatedAt: string;
@@ -62,6 +63,7 @@ export interface Payment {
   receiptId: string;
   receiptNumber: string;
   amountReceived: number;
+  amount?: number;
   paymentMethod: PaymentMethod;
   paymentDate: string;
   referenceNumber: string;
@@ -162,6 +164,7 @@ export interface CommitteeSettings {
   id?: string;
   committeeName: string;
   supervisedBy: string;
+  organizationName?: string;
   establishedYear: string;
   phone: string;
   email: string;
@@ -172,10 +175,12 @@ export interface CommitteeSettings {
   defaultMonthlyInstallment: number;
   defaultDueDay: number;
   registrationFee: number;
+  defaultRegistrationFee?: number;
   currency: string;
   receiptFooter: string;
   reminderText: string;
   signatoryName: string;
+  authorizedSignatoryTitle?: string;
   adminPassword?: string;
 }
 
@@ -190,6 +195,10 @@ export interface AuditLog {
   recordId: string;
   details: string;
   createdAt: string;
+  performedBy?: string;
+  targetEntity?: string;
+  targetId?: string;
+  timestamp?: string;
 }
 
 export interface AuthUser {

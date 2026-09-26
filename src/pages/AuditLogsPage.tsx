@@ -20,11 +20,10 @@ export const AuditLogsPage: React.FC<AuditLogsPageProps> = ({ auditLogs }) => {
   const filtered = auditLogs.filter((log) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
-    return (
-      log.action.toLowerCase().includes(q) ||
-      log.performedBy.toLowerCase().includes(q) ||
-      log.targetId.toLowerCase().includes(q)
-    );
+    const performedBy = (log.performedBy || log.user || '').toLowerCase();
+    const targetId = (log.targetId || log.recordId || '').toLowerCase();
+    const action = (log.action || '').toLowerCase();
+    return action.includes(q) || performedBy.includes(q) || targetId.includes(q);
   });
 
   return (
@@ -65,27 +64,34 @@ export const AuditLogsPage: React.FC<AuditLogsPageProps> = ({ auditLogs }) => {
                 </td>
               </tr>
             ) : (
-              filtered.map((log) => (
-                <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-3 px-4 font-mono text-slate-600">
-                    {formatDateDisplay(log.timestamp)}
-                  </td>
-                  <td className="py-3 px-4 font-bold text-slate-900">
-                    <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[11px]">
-                      {log.action}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-slate-700 font-semibold">
-                    {log.targetEntity}
-                  </td>
-                  <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">
-                    {log.targetId}
-                  </td>
-                  <td className="py-3 px-4 text-emerald-800 font-bold">
-                    {log.performedBy}
-                  </td>
-                </tr>
-              ))
+              filtered.map((log) => {
+                const timestampStr = log.timestamp || log.createdAt || `${log.date || ''} ${log.time || ''}`.trim();
+                const targetEntityStr = log.targetEntity || log.recordType || 'Record';
+                const targetIdStr = log.targetId || log.recordId || '-';
+                const performedByStr = log.performedBy || log.user || 'Admin';
+
+                return (
+                  <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="py-3 px-4 font-mono text-slate-600">
+                      {formatDateDisplay(timestampStr)}
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-900">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[11px]">
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-700 font-semibold">
+                      {targetEntityStr}
+                    </td>
+                    <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">
+                      {targetIdStr}
+                    </td>
+                    <td className="py-3 px-4 text-emerald-800 font-bold">
+                      {performedByStr}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

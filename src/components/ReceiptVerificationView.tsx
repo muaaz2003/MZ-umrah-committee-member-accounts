@@ -12,6 +12,7 @@ import {
 import { Receipt } from '../types';
 import { getReceiptById } from '../services/firebaseService';
 import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import { IslamicBackground } from './IslamicBackground';
 
 interface ReceiptVerificationViewProps {
   receiptId: string;
@@ -47,8 +48,9 @@ export const ReceiptVerificationView: React.FC<ReceiptVerificationViewProps> = (
   }, [receiptId]);
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+    <div className="relative min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+      <IslamicBackground />
+      <div className="relative z-10 max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
         {/* Header */}
         <div className="bg-emerald-950 px-6 py-6 text-white text-center">
           <div className="w-14 h-14 bg-emerald-800 text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-md">

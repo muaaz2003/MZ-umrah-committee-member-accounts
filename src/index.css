@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap');
 
 @layer base {
   body {
@@ -8,37 +9,40 @@
   }
 }
 
+.font-urdu,
+.font-naskh {
+  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+  letter-spacing: 0 !important;
+}
+
 .font-nastaliq {
-  font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', serif;
-  line-height: 1.85;
+  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, 'Jameel Noori Nastaleeq', serif;
+  line-height: 1.7;
+  letter-spacing: 0 !important;
 }
 
 .font-nastaliq-tight {
-  font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', serif;
+  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, 'Jameel Noori Nastaleeq', serif;
   line-height: 1.45;
+  letter-spacing: 0 !important;
 }
 
 #pdf-voucher-container {
   height: auto !important;
   overflow: visible !important;
   box-sizing: border-box;
+  letter-spacing: 0 !important;
+  font-feature-settings: normal;
 }
 
 #pdf-voucher-container label {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
   display: block;
 }
 
 #pdf-voucher-container input,
 #pdf-voucher-container textarea {
-  line-height: 1.25;
-}
-
-.font-urdu {
-  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
-}
-
-.font-naskh {
+  line-height: 1.35;
   font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
 }
 
@@ -46,6 +50,8 @@
   body {
     background: #ffffff !important;
     color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .no-print {
     display: none !important;
@@ -53,17 +59,18 @@
   .print-only {
     display: block !important;
   }
-  .printable-receipt-card {
+  .printable-receipt-card,
+  #pdf-voucher-container {
     box-shadow: none !important;
-    border: 1px solid #1e293b !important;
-    margin: 0 !important;
-    padding: 20px !important;
+    border: 1px solid #94a3b8 !important;
+    margin: 0 auto !important;
+    padding: 16px !important;
     width: 100% !important;
     max-width: 100% !important;
     page-break-inside: avoid;
   }
   @page {
     size: A4 portrait;
-    margin: 12mm;
+    margin: 8mm;
   }
 }

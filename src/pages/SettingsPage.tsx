@@ -298,8 +298,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={formData.organizationName}
-                  onChange={(e) => setFormData({ ...formData, organizationName: e.target.value })}
+                  value={formData.supervisedBy || formData.organizationName || ''}
+                  onChange={(e) => setFormData({ ...formData, supervisedBy: e.target.value, organizationName: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
@@ -310,8 +310,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </label>
                 <input
                   type="number"
-                  value={formData.establishedYear}
-                  onChange={(e) => setFormData({ ...formData, establishedYear: Number(e.target.value) })}
+                  value={formData.establishedYear || ''}
+                  onChange={(e) => setFormData({ ...formData, establishedYear: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
@@ -322,8 +322,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={formData.authorizedSignatoryTitle}
-                  onChange={(e) => setFormData({ ...formData, authorizedSignatoryTitle: e.target.value })}
+                  value={formData.signatoryName || formData.authorizedSignatoryTitle || ''}
+                  onChange={(e) => setFormData({ ...formData, signatoryName: e.target.value, authorizedSignatoryTitle: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
@@ -377,8 +377,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </label>
                 <input
                   type="number"
-                  value={formData.defaultRegistrationFee}
-                  onChange={(e) => setFormData({ ...formData, defaultRegistrationFee: Number(e.target.value) })}
+                  value={formData.registrationFee ?? formData.defaultRegistrationFee ?? 1000}
+                  onChange={(e) => setFormData({ ...formData, registrationFee: Number(e.target.value) })}
                   className="w-full px-3 py-2 border rounded-lg font-bold"
                 />
               </div>

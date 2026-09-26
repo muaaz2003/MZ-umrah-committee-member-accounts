@@ -26,16 +26,6 @@ import {
   Percent,
   Coins,
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Cell,
-} from 'recharts';
 import { Member, Payment, Receipt, FinancialSummary, Installment, Refund } from '../types';
 import { formatPKR, formatDateDisplay, getDaysLate } from '../utils/calculations';
 import { MemberCard } from '../components/MemberCard';
@@ -78,6 +68,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [activeTab, setActiveTab] = useState<ActiveTab>('receipts');
   const [receiptSearch, setReceiptSearch] = useState('');
   const [methodFilter, setMethodFilter] = useState<'ALL' | 'Cash' | 'EasyPaisa' | 'JazzCash' | 'Other'>('ALL');
+  const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
 
   // Today and Month dates for calculations
   const todayDateStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -199,6 +190,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       };
     });
   }, [payments]);
+
+  const maxMonthlyAmount = useMemo(() => {
+    const maxVal = Math.max(...monthlyChartData.map((d) => d.amount), 0);
+    return maxVal > 0 ? Math.ceil(maxVal / 10000) * 10000 : 50000;
+  }, [monthlyChartData]);
 
   // Search & Filter for Receipts / Money Records table
   const filteredReceipts = useMemo(() => {
@@ -458,43 +454,67 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyChartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fill: '#6B7280', fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={{ stroke: '#E5E7EB' }}
-                />
-                <YAxis
-                  tick={{ fill: '#6B7280', fontSize: 11 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => `Rs.${val / 1000}k`}
-                />
-                <Tooltip
-                  formatter={(val: any) => [formatPKR(Number(val)), 'Collected Amount']}
-                  contentStyle={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '12px',
-                    borderColor: '#E5E7EB',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                  }}
-                />
-                <Bar dataKey="amount" fill="#064E3B" radius={[6, 6, 0, 0]}>
-                  {monthlyChartData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={index === monthlyChartData.length - 1 ? '#F59E0B' : '#064E3B'}
+          <div className="h-64 w-full relative pt-6 pb-2 select-none">
+            {/* Horizontal Grid lines with Y-Axis value indicators */}
+            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-8 pt-2">
+              {[1, 0.75, 0.5, 0.25, 0].map((ratio) => {
+                const val = Math.round(maxMonthlyAmount * ratio);
+                return (
+                  <div key={ratio} className="w-full flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-gray-400 w-12 text-right shrink-0">
+                      Rs.{val >= 1000 ? `${Math.round(val / 1000)}k` : val}
+                    </span>
+                    <div className="w-full border-b border-gray-100" />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bars container */}
+            <div className="relative h-full flex items-end justify-between pl-14 pr-2 pb-8 gap-3 sm:gap-4">
+              {monthlyChartData.map((entry, index) => {
+                const isCurrentCycle = index === monthlyChartData.length - 1;
+                const heightPct = Math.max(
+                  entry.amount > 0 ? (entry.amount / maxMonthlyAmount) * 100 : 4,
+                  3
+                );
+                const isHovered = hoveredBarIndex === index;
+
+                return (
+                  <div
+                    key={entry.month}
+                    className="flex-1 flex flex-col items-center h-full justify-end group relative cursor-pointer"
+                    onMouseEnter={() => setHoveredBarIndex(index)}
+                    onMouseLeave={() => setHoveredBarIndex(null)}
+                  >
+                    {/* Tooltip on hover */}
+                    {isHovered && (
+                      <div className="absolute -top-12 z-20 bg-gray-900 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-lg whitespace-nowrap pointer-events-none transition-all">
+                        <div className="font-bold text-[11px] text-amber-300">{entry.formatted}</div>
+                        <div className="text-[10px] text-gray-300">
+                          {entry.month} {isCurrentCycle ? '• Current' : ''}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bar */}
+                    <div
+                      className={`w-full max-w-[42px] rounded-t-md transition-all duration-300 ${
+                        isCurrentCycle
+                          ? 'bg-amber-500 hover:bg-amber-600 shadow-sm shadow-amber-200'
+                          : 'bg-[#064E3B] hover:bg-emerald-800 shadow-sm shadow-emerald-200'
+                      } ${isHovered ? 'scale-y-[1.03] brightness-110' : ''}`}
+                      style={{ height: `${heightPct}%`, minHeight: '6px' }}
                     />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+
+                    {/* Month Label */}
+                    <span className="absolute -bottom-6 text-[11px] font-medium text-gray-600 text-center truncate max-w-full">
+                      {entry.month}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <div className="mt-2 flex items-center justify-center gap-6 text-xs text-gray-500">
             <span className="flex items-center gap-1.5">

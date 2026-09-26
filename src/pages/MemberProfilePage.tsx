@@ -292,7 +292,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                   <tbody className="divide-y divide-gray-50">
                     {installments.map((inst) => {
                       const receipt = receipts.find((r) => r.installmentNumber === inst.installmentNumber);
-                      const isToday = inst.status === 'Partial' || (inst.status === 'Unpaid' && inst.dueDate.startsWith(new Date().toISOString().slice(0, 7)));
+                      const isToday = inst.status === 'Partial' || (inst.status !== 'Paid' && inst.dueDate.startsWith(new Date().toISOString().slice(0, 7)));
                       return (
                         <tr
                           key={inst.id}

@@ -590,7 +590,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
                 <span>Partial Payment Detected</span>
               </div>
               <p>
-                Paid: <strong>Rs. {amountReceived.toLocaleString()}</strong> | Remaining for this installment: <strong>Rs. {(requiredAmount - amountReceived).toLocaleString()}</strong>.
+                Paid: <strong>Rs. {Number(amountReceived).toLocaleString()}</strong> | Remaining for this installment: <strong>Rs. {(requiredAmount - Number(amountReceived)).toLocaleString()}</strong>.
               </p>
               <p className="text-[11px] text-amber-700">
                 Installment status will be marked as <strong>Partial</strong>.

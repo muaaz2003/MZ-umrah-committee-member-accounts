@@ -42,9 +42,10 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
   const plan36Due = plan36Members.reduce((sum, m) => sum + m.dueAmount, 0);
 
   // Methods
-  const cashTotal = payments.filter((p) => p.paymentMethod === 'Cash').reduce((s, p) => s + p.amount, 0);
-  const epTotal = payments.filter((p) => p.paymentMethod === 'EasyPaisa').reduce((s, p) => s + p.amount, 0);
-  const jcTotal = payments.filter((p) => p.paymentMethod === 'JazzCash').reduce((s, p) => s + p.amount, 0);
+  const getAmt = (p: Payment) => p.amountReceived || p.amount || 0;
+  const cashTotal = payments.filter((p) => p.paymentMethod === 'Cash').reduce((s, p) => s + getAmt(p), 0);
+  const epTotal = payments.filter((p) => p.paymentMethod === 'EasyPaisa').reduce((s, p) => s + getAmt(p), 0);
+  const jcTotal = payments.filter((p) => p.paymentMethod === 'JazzCash').reduce((s, p) => s + getAmt(p), 0);
 
   const handleExportCSV = () => {
     let csvContent = 'data:text/csv;charset=utf-8,';
@@ -52,7 +53,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
     if (selectedReport === 'collection') {
       csvContent += 'Receipt/Payment Date,Member Name,Membership No,Installment No,Amount Received,Payment Method,Reference TID,Collected By\n';
       payments.forEach((p) => {
-        csvContent += `"${p.paymentDate}","${p.memberName}","${p.memberNumber}","${p.installmentNumber}","${p.amount}","${p.paymentMethod}","${p.referenceNumber || ''}","${p.collectedBy || ''}"\n`;
+        csvContent += `"${p.paymentDate}","${p.memberName}","${p.memberNumber}","${p.installmentNumber}","${getAmt(p)}","${p.paymentMethod}","${p.referenceNumber || ''}","${p.collectedBy || ''}"\n`;
       });
     } else {
       csvContent += 'Membership No,Full Name,Father Name,Mobile,Plan Months,Total Amount,Paid Amount,Due Amount,Advance Amount,Status\n';
@@ -185,7 +186,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
                     <td className="py-2.5 px-3">Qist #{p.installmentNumber}</td>
                     <td className="py-2.5 px-3">{p.paymentMethod}</td>
                     <td className="py-2.5 px-3 font-mono text-slate-500">{p.referenceNumber || '—'}</td>
-                    <td className="py-2.5 px-3 text-right font-black text-emerald-800">{formatPKR(p.amount)}</td>
+                    <td className="py-2.5 px-3 text-right font-black text-emerald-800">{formatPKR(getAmt(p))}</td>
                     <td className="py-2.5 px-3 text-slate-600">{p.collectedBy}</td>
                   </tr>
                 ))}
