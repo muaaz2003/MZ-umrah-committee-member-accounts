@@ -285,34 +285,72 @@ export function numberToWordsEnglish(num: number): string {
   return res ? `${res} Only` : '';
 }
 
-export function numberToWordsUrdu(num: number): string {
-  if (!num || isNaN(num) || num <= 0) return '';
-  if (num === 120000) return 'ایک لاکھ بیس ہزار روپے فقط';
-  if (num === 180000) return 'ایک لاکھ اسی ہزار روپے فقط';
-  if (num === 60000) return 'ساٹھ ہزار روپے فقط';
-  if (num === 100000) return 'ایک لاکھ روپے فقط';
-  if (num === 50000) return 'پچاس ہزار روپے فقط';
-  if (num === 10000) return 'دس ہزار روپے فقط';
-  if (num === 5000) return 'پانچ ہزار روپے فقط';
+const URDU_0_TO_99: { [key: number]: string } = {
+  0: 'صفر', 1: 'ایک', 2: 'دو', 3: 'تین', 4: 'چار', 5: 'پانچ', 6: 'چھ', 7: 'سات', 8: 'آٹھ', 9: 'نو', 10: 'دس',
+  11: 'گیارہ', 12: 'بارہ', 13: 'تیرہ', 14: 'چودہ', 15: 'پندرہ', 16: 'سولہ', 17: 'سترہ', 18: 'اٹھارہ', 19: 'انیس',
+  20: 'بیس', 21: 'اکیس', 22: 'بائیس', 23: 'تیئیس', 24: 'چوبیس', 25: 'پچیس', 26: 'چھبیس', 27: 'ستائیس', 28: 'اٹھائیس', 29: 'انتیس',
+  30: 'تیس', 31: 'اکتیس', 32: 'بتیس', 33: 'تینتیس', 34: 'چونتیس', 35: 'پینتیس', 36: 'چھتیس', 37: 'سینتیس', 38: 'اڑتیس', 39: 'انتالیس',
+  40: 'چالیس', 41: 'اکتالیس', 42: 'بیالیس', 43: 'تینتالیس', 44: 'چوالیس', 45: 'پینتالیس', 46: 'چھیالیس', 47: 'سینتالیس', 48: 'اڑتالیس', 49: 'انچاس',
+  50: 'پچاس', 51: 'اکیاون', 52: 'باون', 53: 'ترپن', 54: 'چون', 55: 'پچپن', 56: 'چھپن', 57: 'ستاون', 58: 'اٹھاون', 59: 'انسٹھ',
+  60: 'ساٹھ', 61: 'اکسٹھ', 62: 'باسٹھ', 63: 'تریسٹھ', 64: 'چونسٹھ', 65: 'پینسٹھ', 66: 'چھیاسٹھ', 67: 'سڑسٹھ', 68: 'اڑسٹھ', 69: 'انہتر',
+  70: 'ستر', 71: 'اکہتر', 72: 'بہتر', 73: 'تہتر', 74: 'چوہتر', 75: 'پچھتر', 76: 'چھہتر', 77: 'ستتر', 78: 'اٹھتر', 79: 'اناسی',
+  80: 'اسی', 81: 'اکیاسی', 82: 'بیاسی', 83: 'تراسی', 84: 'چوراسی', 85: 'پچاسی', 86: 'چھیاسی', 87: 'ستاسی', 88: 'اٹھاسی', 89: 'نواسی',
+  90: 'نوے', 91: 'اکیانوے', 92: 'بانوے', 93: 'ترانوے', 94: 'چورانوے', 95: 'پچانوے', 96: 'چھیانوے', 97: 'ستانوے', 98: 'اٹھانوے', 99: 'نانوے'
+};
 
-  // Generic lakhs and thousands converter
-  const lakh = Math.floor(num / 100000);
-  const remainderLakh = num % 100000;
-  const thousand = Math.floor(remainderLakh / 1000);
+function convertHundredsUrdu(n: number): string {
+  if (n <= 0) return '';
+  if (n < 100) return URDU_0_TO_99[n] || '';
+  const h = Math.floor(n / 100);
+  const rem = n % 100;
+  const hText = (h === 1 ? 'ایک سو' : ((URDU_0_TO_99[h] || '') + ' سو'));
+  if (rem === 0) return hText;
+  return `${hText} ${URDU_0_TO_99[rem] || ''}`.trim();
+}
 
-  const urduDigits: { [key: number]: string } = {
-    1: 'ایک', 2: 'دو', 3: 'تین', 4: 'چار', 5: 'پانچ', 6: 'چھ', 7: 'سات', 8: 'آٹھ', 9: 'نو', 10: 'دس',
-    15: 'پندرہ', 20: 'بیس', 25: 'پچیس', 30: 'تیس', 35: 'پینتیس', 40: 'چالیس', 45: 'پینتالیس', 50: 'پچاس',
-    55: 'پچپن', 60: 'ساٹھ', 65: 'پینسٹھ', 70: 'ستر', 75: 'پچھتر', 80: 'اسی', 85: 'پچاسی', 90: 'نوے', 95: 'پچانوے'
-  };
+export function numberToWordsUrdu(val: number | string): string {
+  if (val === undefined || val === null) return '';
+  const strVal = String(val).replace(/,/g, '').trim();
+  if (strVal === '') return '';
+  const num = Number(strVal);
+  if (isNaN(num)) return '';
+  if (num === 0) return 'صفر';
 
-  let str = '';
-  if (lakh > 0) {
-    str += `${urduDigits[lakh] || lakh} لاکھ `;
+  // Special colloquial Urdu case: 1100, 1200 ... 1500 (e.g. 1500 -> پندرہ سو)
+  if (num >= 1100 && num <= 1900 && num % 100 === 0) {
+    const h = Math.floor(num / 100);
+    return `${URDU_0_TO_99[h] || ''} سو`.trim();
   }
-  if (thousand > 0) {
-    str += `${urduDigits[thousand] || thousand} ہزار `;
+
+  let n = Math.floor(Math.abs(num));
+  const parts: string[] = [];
+
+  // Crores (10,000,000)
+  if (n >= 10000000) {
+    const crore = Math.floor(n / 10000000);
+    n = n % 10000000;
+    parts.push(`${numberToWordsUrdu(crore)} کروڑ`);
   }
-  return str ? `${str.trim()} روپے فقط` : `${num} روپے فقط`;
+
+  // Lakhs (100,000)
+  if (n >= 100000) {
+    const lakh = Math.floor(n / 100000);
+    n = n % 100000;
+    parts.push(`${URDU_0_TO_99[lakh] || convertHundredsUrdu(lakh)} لاکھ`);
+  }
+
+  // Thousands (1,000)
+  if (n >= 1000) {
+    const thousand = Math.floor(n / 1000);
+    n = n % 1000;
+    parts.push(`${URDU_0_TO_99[thousand] || convertHundredsUrdu(thousand)} ہزار`);
+  }
+
+  // Remainder (1 to 999)
+  if (n > 0) {
+    parts.push(convertHundredsUrdu(n));
+  }
+
+  return parts.join(' ').trim();
 }
 

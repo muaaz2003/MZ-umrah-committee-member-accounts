@@ -34,6 +34,54 @@ interface RefundFormModalProps {
   onRefundSuccess?: (refund: Refund) => void;
 }
 
+let cachedArabicFontBase64: string | null = null;
+
+async function getEmbeddedArabicFontBase64(): Promise<string> {
+  if (cachedArabicFontBase64) return cachedArabicFontBase64;
+  try {
+    const res = await fetch('/fonts/NotoNaskhArabic-Regular.ttf');
+    if (!res.ok) return '';
+    const arrayBuffer = await res.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(arrayBuffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    cachedArabicFontBase64 = window.btoa(binary);
+    return cachedArabicFontBase64;
+  } catch (e) {
+    console.warn('Failed to load embedded Arabic/Urdu font for jsPDF:', e);
+    return '';
+  }
+}
+
+async function ensureUrduFontsLoaded(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if ('fonts' in document) {
+    try {
+      const fontFaces = [
+        new FontFace('Noto Nastaliq Urdu', 'url(/fonts/NotoNastaliqUrdu-Regular.ttf)', { weight: '400' }),
+        new FontFace('Noto Nastaliq Urdu', 'url(/fonts/NotoNastaliqUrdu-Regular.ttf)', { weight: '700' }),
+        new FontFace('Noto Naskh Arabic', 'url(/fonts/NotoNaskhArabic-Regular.ttf)', { weight: '400' }),
+        new FontFace('Noto Naskh Arabic', 'url(/fonts/NotoNaskhArabic-Regular.ttf)', { weight: '700' }),
+      ];
+      await Promise.all(
+        fontFaces.map(async (f) => {
+          try {
+            const loaded = await f.load();
+            document.fonts.add(loaded);
+          } catch {
+            // Already added or cached
+          }
+        })
+      );
+    } catch (err) {
+      console.warn('FontFace registration error:', err);
+    }
+    await document.fonts.ready;
+  }
+}
+
 export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   isOpen,
   onClose,
@@ -96,13 +144,24 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   // Form paper capture ref
   const formPrintRef = useRef<HTMLDivElement | null>(null);
 
-  // Lock background body scroll when modal is open so only the form scrolls
+  // Lock background body scroll when modal is open and automatically set initial Voucher # and Date
   useEffect(() => {
     if (isOpen) {
       const originalOverflow = document.body.style.overflow;
       const originalTouchAction = document.body.style.touchAction;
       document.body.style.overflow = 'hidden';
       document.body.style.touchAction = 'none';
+
+      // Automatically generate Voucher # and Date as soon as the refund page/modal opens
+      const now = new Date();
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const formattedDate = `${String(now.getDate()).padStart(2, '0')}-${months[now.getMonth()]}-${now.getFullYear()}`;
+      const autoVoucher = `MZ-REF-${Date.now().toString().slice(-4)}`;
+
+      setVoucherNumber((prev) => (prev ? prev : autoVoucher));
+      setRefundDate((prev) => (prev ? prev : formattedDate));
+      setIssueDate((prev) => (prev ? prev : formattedDate));
+
       return () => {
         document.body.style.overflow = originalOverflow;
         document.body.style.touchAction = originalTouchAction;
@@ -112,15 +171,43 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Auto-fill words helper when amount changes
+  // Auto-fill words helper when amount changes (Source of Truth for Urdu & English Words)
   const handleAmountChange = (val: string) => {
     setTotalCollectedAmount(val);
     setReceivedFigure(val);
     setTotalRefundFigure(val);
-    const num = Number(val);
-    if (!isNaN(num) && num > 0) {
-      setAmountInWordsEnglish(numberToWordsEnglish(num));
-      setAmountInWordsUrdu(numberToWordsUrdu(num));
+    const clean = val.replace(/,/g, '').trim();
+    if (!clean) {
+      setAmountInWordsEnglish('');
+      setAmountInWordsUrdu('');
+      setReceivedWords('');
+      return;
+    }
+    const num = Number(clean);
+    if (!isNaN(num)) {
+      if (num === 0) {
+        setAmountInWordsEnglish('Zero Only');
+        const zeroUrdu = numberToWordsUrdu(0);
+        setAmountInWordsUrdu(zeroUrdu);
+        setReceivedWords(zeroUrdu);
+      } else if (num > 0) {
+        setAmountInWordsEnglish(numberToWordsEnglish(num));
+        const urduWords = numberToWordsUrdu(num);
+        setAmountInWordsUrdu(urduWords);
+        setReceivedWords(urduWords);
+      }
+    }
+  };
+
+  const handleReceivedFigureChange = (val: string) => {
+    setReceivedFigure(val);
+    const clean = val.replace(/,/g, '').trim();
+    if (!clean) {
+      setReceivedWords('');
+      return;
+    }
+    const num = Number(clean);
+    if (!isNaN(num)) {
       setReceivedWords(numberToWordsUrdu(num));
     }
   };
@@ -248,7 +335,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
     setActiveSignTarget(null);
   };
 
-  // Download PDF Form using html2pdf.js (with dynamic height & single A4 fit)
+  // Download PDF Form with complex-script Urdu shaping & embedded font support
   const handleDownloadPDF = async () => {
     if (!formPrintRef.current) return;
     try {
@@ -266,18 +353,43 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
       element.style.overflow = 'visible';
       element.style.maxHeight = 'none';
 
-      // Ensure all custom fonts (especially Noto Nastaliq Urdu / Jameel Noori Nastaleeq) are loaded
-      if (document.fonts) {
-        await document.fonts.ready;
-      }
+      // 1. Ensure all custom fonts (especially Noto Nastaliq Urdu & Noto Naskh Arabic) are loaded
+      await ensureUrduFontsLoaded();
 
-      // Sync all input and textarea values into DOM attributes so html2canvas captures user typed values
-      const origInputs = element.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
-      origInputs.forEach((input) => {
-        if (input.tagName.toLowerCase() === 'textarea') {
-          input.textContent = input.value;
-        } else {
-          input.setAttribute('value', input.value);
+      // 2. Fetch base64 of embedded Unicode font for jsPDF VFS
+      const embeddedFontBase64 = await getEmbeddedArabicFontBase64();
+
+      // 3. Collect field coordinates relative to the container for the selectable text layer
+      const elementRect = element.getBoundingClientRect();
+      interface SelectableField {
+        val: string;
+        isUrdu: boolean;
+        relX: number;
+        relY: number;
+        relW: number;
+        relH: number;
+        fontSize: number;
+        textAlign: string;
+      }
+      const selectableFields: SelectableField[] = [];
+      const liveInputs = element.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+
+      liveInputs.forEach((liveInput) => {
+        const val = liveInput.value?.trim() || '';
+        if (val) {
+          const rect = liveInput.getBoundingClientRect();
+          const comp = window.getComputedStyle(liveInput);
+          const hasUrdu = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(val);
+          selectableFields.push({
+            val: liveInput.value,
+            isUrdu: hasUrdu,
+            relX: (rect.left - elementRect.left) / Math.max(1, elementRect.width),
+            relY: (rect.top - elementRect.top) / Math.max(1, elementRect.height),
+            relW: rect.width / Math.max(1, elementRect.width),
+            relH: rect.height / Math.max(1, elementRect.height),
+            fontSize: parseFloat(comp.fontSize) || 11,
+            textAlign: comp.textAlign || (hasUrdu ? 'right' : 'left'),
+          });
         }
       });
 
@@ -292,13 +404,170 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
           windowWidth: 1200,
           backgroundColor: '#ffffff',
           logging: false,
+          onclone: async (clonedDoc, clonedElement) => {
+            // A. Inject @font-face rules into cloned iframe document head
+            const styleEl = clonedDoc.createElement('style');
+            styleEl.textContent = `
+              @font-face {
+                font-family: 'Noto Nastaliq Urdu';
+                src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+                font-weight: 400;
+                font-style: normal;
+              }
+              @font-face {
+                font-family: 'Noto Nastaliq Urdu';
+                src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+                font-weight: 700;
+                font-style: normal;
+              }
+              @font-face {
+                font-family: 'Noto Naskh Arabic';
+                src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+                font-weight: 400;
+                font-style: normal;
+              }
+              @font-face {
+                font-family: 'Noto Naskh Arabic';
+                src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+                font-weight: 700;
+                font-style: normal;
+              }
+              .cloned-form-field-replacement {
+                box-sizing: border-box !important;
+                letter-spacing: 0 !important;
+                word-break: break-word !important;
+              }
+            `;
+            clonedDoc.head.appendChild(styleEl);
+
+            if (clonedDoc.fonts) {
+              try {
+                await clonedDoc.fonts.ready;
+              } catch {
+                // Continue if already ready
+              }
+            }
+
+            // B. Replace inputs and textareas in the cloned DOM with block-level styled elements.
+            // Using display: block with direction: rtl and text-align: right guarantees that
+            // html2canvas-pro anchors text ranges solidly to the right border with comfortable 14px padding.
+            const clonedInputs = clonedElement.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+            const sourceInputs = element.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+
+            for (let i = 0; i < clonedInputs.length; i++) {
+              const clonedInput = clonedInputs[i];
+              const sourceInput = sourceInputs[i];
+              if (!clonedInput || !sourceInput) continue;
+
+              const val = sourceInput.value ?? '';
+              const isTextarea = sourceInput.tagName.toLowerCase() === 'textarea';
+              const computed = window.getComputedStyle(sourceInput);
+
+              const replacement = clonedDoc.createElement('div');
+              replacement.className = `${sourceInput.className} cloned-form-field-replacement`;
+
+              // Copy exact dimensions from live rendered input to ensure 0 layout shift
+              const widthPx = sourceInput.offsetWidth > 0 ? sourceInput.offsetWidth : parseFloat(computed.width);
+              const heightPx = sourceInput.offsetHeight > 0 ? sourceInput.offsetHeight : parseFloat(computed.height);
+
+              replacement.style.boxSizing = 'border-box';
+              replacement.style.width = `${widthPx}px`;
+              replacement.style.display = 'block';
+
+              // Copy live computed colors, borders, typography
+              replacement.style.margin = computed.margin;
+              replacement.style.border = computed.border;
+              replacement.style.borderRadius = computed.borderRadius;
+              replacement.style.backgroundColor = computed.backgroundColor;
+              replacement.style.color = computed.color;
+              replacement.style.fontSize = computed.fontSize;
+              replacement.style.fontWeight = computed.fontWeight;
+
+              // Script and direction detection
+              const hasUrdu = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(val);
+              const isRtl = sourceInput.getAttribute('dir') === 'rtl' ||
+                            sourceInput.classList.contains('text-right') ||
+                            computed.direction === 'rtl' ||
+                            computed.textAlign === 'right' ||
+                            hasUrdu;
+              const isCenter = sourceInput.classList.contains('text-center') || computed.textAlign === 'center';
+
+              if (isRtl) {
+                replacement.setAttribute('dir', 'rtl');
+                replacement.style.direction = 'rtl';
+                replacement.style.textAlign = 'right';
+                // Comfortable right padding between 12px and 16px (14px)
+                replacement.style.paddingRight = '14px';
+                replacement.style.paddingLeft = '8px';
+              } else if (isCenter) {
+                replacement.setAttribute('dir', 'ltr');
+                replacement.style.direction = 'ltr';
+                replacement.style.textAlign = 'center';
+                replacement.style.paddingLeft = '6px';
+                replacement.style.paddingRight = '6px';
+              } else {
+                replacement.setAttribute('dir', 'ltr');
+                replacement.style.direction = 'ltr';
+                replacement.style.textAlign = 'left';
+                replacement.style.paddingLeft = '10px';
+                replacement.style.paddingRight = '8px';
+              }
+
+              if (isTextarea) {
+                replacement.style.minHeight = `${heightPx}px`;
+                replacement.style.paddingTop = computed.paddingTop || '6px';
+                replacement.style.paddingBottom = computed.paddingBottom || '6px';
+                replacement.style.whiteSpace = 'pre-wrap';
+                replacement.style.wordBreak = 'break-word';
+                replacement.style.lineHeight = computed.lineHeight || '1.6';
+              } else {
+                replacement.style.height = `${heightPx}px`;
+                replacement.style.paddingTop = '0px';
+                replacement.style.paddingBottom = '0px';
+                replacement.style.whiteSpace = 'nowrap';
+                replacement.style.overflow = 'hidden';
+                replacement.style.textOverflow = 'ellipsis';
+                // Vertical alignment matching input height
+                const borderTop = parseFloat(computed.borderTopWidth) || 1;
+                const borderBottom = parseFloat(computed.borderBottomWidth) || 1;
+                const innerH = Math.max(14, heightPx - borderTop - borderBottom - 2);
+                replacement.style.lineHeight = `${innerH}px`;
+              }
+
+              // Prioritize embedded Urdu/Arabic Unicode fonts with fallback
+              replacement.style.fontFamily = `'Noto Nastaliq Urdu', 'Noto Naskh Arabic', 'Noto Sans Arabic', ${computed.fontFamily}`;
+              replacement.style.letterSpacing = '0px';
+
+              if (val.trim()) {
+                replacement.textContent = val.trim();
+              } else {
+                // Empty inputs remain clean with original border/background without collapsing
+                replacement.innerHTML = '&nbsp;';
+                replacement.style.color = 'transparent';
+              }
+
+              clonedInput.parentNode?.replaceChild(replacement, clonedInput);
+            }
+          },
         });
+
         const imgData = canvas.toDataURL('image/jpeg', 0.98);
         const pdf = new jsPDF({
           orientation: 'portrait',
           unit: 'mm',
           format: 'a4',
         });
+
+        // Embed Unicode Urdu/Arabic font into jsPDF VFS for standalone portability
+        if (embeddedFontBase64) {
+          try {
+            pdf.addFileToVFS('NotoNaskhArabic.ttf', embeddedFontBase64);
+            pdf.addFont('NotoNaskhArabic.ttf', 'NotoNaskhArabic', 'normal');
+          } catch (fontErr) {
+            console.warn('jsPDF font registration notice:', fontErr);
+          }
+        }
+
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
         const margin = 5;
@@ -310,7 +579,35 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
         const xOffset = margin + (printW - renderW) / 2;
         const yOffset = margin + (printH - renderH) / 2;
 
+        // Visual high-resolution render preserving full Nastaliq cursive typography, signatures, and badges
         pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderW, renderH, undefined, 'FAST');
+
+        // Embed real selectable Unicode text layer for all filled fields (Requirement 9)
+        if (selectableFields.length > 0) {
+          try {
+            if (embeddedFontBase64) {
+              pdf.setFont('NotoNaskhArabic', 'normal');
+            }
+            selectableFields.forEach((field) => {
+              const pdfFieldX = xOffset + field.relX * renderW;
+              const pdfFieldY = yOffset + field.relY * renderH;
+              const pdfFieldW = field.relW * renderW;
+              const pdfFieldH = field.relH * renderH;
+              // Right padding offset in PDF mm (~2.5mm corresponds to ~14px right padding on canvas)
+              const textX = field.textAlign === 'right' || field.isUrdu ? (pdfFieldX + pdfFieldW - 2.5) : (pdfFieldX + 1.5);
+              const textY = pdfFieldY + pdfFieldH * 0.7;
+
+              pdf.text(field.val, textX, textY, {
+                align: field.textAlign === 'right' || field.isUrdu ? 'right' : 'left',
+                renderingMode: 'invisible',
+                maxWidth: Math.max(10, pdfFieldW - 4),
+              });
+            });
+          } catch (txtErr) {
+            console.warn('Selectable text layer note:', txtErr);
+          }
+        }
+
         pdf.save(filename);
       } finally {
         // Restore container styles
@@ -450,16 +747,6 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
             <button
               type="button"
-              disabled={isSaving}
-              onClick={handleSaveRecord}
-              className="px-3 sm:px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 active:scale-98 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50 border border-emerald-600"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-amber-300" />
-              <span>{isSaving ? 'Saving...' : 'Save'}</span>
-            </button>
-
-            <button
-              type="button"
               onClick={onClose}
               className="p-1 sm:p-1.5 text-emerald-200 hover:text-white hover:bg-emerald-900 rounded-xl transition-colors cursor-pointer"
               title="Close"
@@ -506,45 +793,47 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             style={{ height: 'auto', overflow: 'visible' }}
           >
             {/* Top Ornamental Header Band */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-emerald-800/80 pb-3 sm:pb-4 mb-4 gap-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b-2 border-emerald-800/80 pb-3 sm:pb-4 mb-3 sm:mb-4 gap-3 sm:gap-4">
               {/* Left Brand Identity */}
-              <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-[#064E3B] text-amber-400 flex items-center justify-center font-bold shadow-md shadow-emerald-950/10 shrink-0">
                   <ShieldCheck className="w-6 h-6 sm:w-7 sm:h-7" />
                 </div>
-                <div>
-                  <h1 className="text-base sm:text-xl md:text-2xl font-black text-[#064E3B] tracking-tight uppercase">
+                <div className="min-w-0">
+                  <h1 className="text-base sm:text-xl md:text-2xl font-black text-[#064E3B] tracking-tight uppercase leading-tight truncate sm:whitespace-normal">
                     M.Z.A UMRAH COMMITTEE
                   </h1>
-                  <p className="text-[10px] sm:text-xs font-bold text-slate-600">
+                  <p className="text-[10.5px] sm:text-xs font-bold text-slate-600 leading-tight mt-0.5 truncate sm:whitespace-normal">
                     Under the supervision of M.Z.A Welfare Pakistan
                   </p>
-                  <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 mt-0.5 inline-block">
+                  <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 mt-1 inline-block">
                     Established in 2019 • Regd. Welfare Trust
                   </span>
                 </div>
               </div>
 
               {/* Right Metadata Block: Receipt No & Refund Date */}
-              <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 bg-slate-50 border border-slate-200 p-2 sm:p-2.5 rounded-xl text-xs shrink-0">
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs">Voucher #:</span>
+              <div className="w-full sm:w-auto flex flex-col sm:flex-row md:flex-col items-stretch sm:items-center md:items-end justify-between sm:justify-end gap-2 bg-slate-50/90 border border-slate-200 p-2 sm:p-2.5 rounded-xl text-xs shrink-0 shadow-2xs">
+                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs shrink-0">Voucher #:</span>
                   <input
                     type="text"
                     value={voucherNumber}
                     onChange={(e) => setVoucherNumber(e.target.value)}
                     placeholder="#MZ-REF-0079"
-                    className="w-24 sm:w-28 px-1.5 sm:px-2 py-0.5 font-mono font-bold text-xs text-rose-700 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-right"
+                    dir="ltr"
+                    className="w-28 sm:w-32 px-2 py-1 font-mono font-bold text-xs text-rose-700 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-center shadow-2xs"
                   />
                 </div>
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs">Date:</span>
+                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs shrink-0">Date:</span>
                   <input
                     type="text"
                     value={refundDate}
                     onChange={(e) => setRefundDate(e.target.value)}
                     placeholder="DD-MMM-YYYY"
-                    className="w-24 sm:w-28 px-1.5 sm:px-2 py-0.5 font-semibold text-xs border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-right"
+                    dir="ltr"
+                    className="w-28 sm:w-32 px-2 py-1 font-semibold text-xs text-slate-900 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-center shadow-2xs"
                   />
                 </div>
               </div>
@@ -586,7 +875,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       setSalutationName(e.target.value);
                     }}
                     placeholder="ممبر کا مکمل نام..."
-                    className="w-full px-2 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
@@ -604,7 +893,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       setSalutationFather(e.target.value);
                     }}
                     placeholder="والد یا شوہر کا نام..."
-                    className="w-full px-2 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
@@ -679,7 +968,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="مکان نمبر، بلاک، گلی، کالونی، شہر..."
-                    className="w-full px-2 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
@@ -694,7 +983,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     value={area}
                     onChange={(e) => setArea(e.target.value)}
                     placeholder="علاقہ مثلاً گلشن بہار، اورنگی..."
-                    className="w-full px-2 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
                     dir="rtl"
                   />
                 </div>
@@ -720,7 +1009,8 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   value={salutationName}
                   onChange={(e) => setSalutationName(e.target.value)}
                   placeholder="نام محترم..."
-                  className="px-2 py-0.5 border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/80 rounded-md focus:outline-hidden min-w-[100px] sm:min-w-[130px] flex-1 sm:flex-initial text-right text-xs"
+                  dir="rtl"
+                  className="pr-3.5 pl-2 py-0.5 border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/80 rounded-md focus:outline-hidden min-w-[100px] sm:min-w-[130px] flex-1 sm:flex-initial text-right text-xs"
                 />
                 <span className="font-bold text-[#064E3B]">ولد:</span>
                 <input
@@ -728,7 +1018,8 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   value={salutationFather}
                   onChange={(e) => setSalutationFather(e.target.value)}
                   placeholder="والد کا نام..."
-                  className="px-2 py-0.5 border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/80 rounded-md focus:outline-hidden min-w-[100px] sm:min-w-[130px] flex-1 sm:flex-initial text-right text-xs"
+                  dir="rtl"
+                  className="pr-3.5 pl-2 py-0.5 border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/80 rounded-md focus:outline-hidden min-w-[100px] sm:min-w-[130px] flex-1 sm:flex-initial text-right text-xs"
                 />
                 <span className="font-bold text-[#064E3B]">صاحب —</span>
                 <span className="font-bold text-emerald-900 mr-auto text-xs">السلام علیکم ورحمۃ اللہ وبرکاتہ</span>
@@ -766,14 +1057,15 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   </div>
                   <div dir="rtl">
                     <label className="block text-right text-slate-700 font-bold mb-0.5 font-nastaliq-tight text-xs">
-                      رقم بلحاظ الفاظ (اردو نستعلیق):
+                      رقم بلحاظ الفاظ:
                     </label>
                     <input
                       type="text"
                       value={amountInWordsUrdu}
                       onChange={(e) => setAmountInWordsUrdu(e.target.value)}
-                      placeholder="ایک لاکھ بیس ہزار روپے فقط"
-                      className="w-full px-2 py-0.5 font-bold font-nastaliq border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 text-right"
+                      placeholder="ایک لاکھ بیس ہزار"
+                      dir="rtl"
+                      className="w-full pr-3.5 pl-2.5 py-1 font-bold font-nastaliq border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 text-right"
                     />
                   </div>
                 </div>
@@ -788,7 +1080,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     <input
                       type="text"
                       value={receivedFigure}
-                      onChange={(e) => setReceivedFigure(e.target.value)}
+                      onChange={(e) => handleReceivedFigureChange(e.target.value)}
                       placeholder="120,000"
                       dir="ltr"
                       className="w-20 sm:w-24 px-1.5 py-0.5 font-mono font-bold text-center border border-emerald-700 rounded-md bg-white focus:outline-hidden text-xs"
@@ -797,8 +1089,9 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       type="text"
                       value={receivedWords}
                       onChange={(e) => setReceivedWords(e.target.value)}
-                      placeholder="ایک لاکھ بیس ہزار روپے فقط"
-                      className="flex-1 min-w-[120px] px-2 py-0.5 border border-slate-300 rounded-md bg-white text-rose-700 font-bold focus:outline-hidden text-right font-nastaliq text-xs"
+                      placeholder="ایک لاکھ بیس ہزار"
+                      dir="rtl"
+                      className="flex-1 min-w-[120px] pr-3.5 pl-2.5 py-1 border border-slate-300 rounded-md bg-white text-rose-700 font-bold focus:outline-hidden text-right font-nastaliq text-xs"
                     />
                     <span className="font-bold text-[#064E3B]">انتظامیہ عمرہ کمیٹی سے وصول کر لی ہے۔</span>
                   </div>
@@ -820,7 +1113,8 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   value={qistDescription}
                   onChange={(e) => setQistDescription(e.target.value)}
                   placeholder="مثلاً: قسط نمبر 1 تا 12، یا مکمل کمیٹی رقم برائے ریفنڈ / کینسلیشن..."
-                  className="w-full px-2.5 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 text-right font-nastaliq min-h-[36px] resize-y text-xs leading-normal"
+                  dir="rtl"
+                  className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 text-right font-nastaliq min-h-[36px] resize-y text-xs leading-normal"
                 />
               </div>
             </div>
@@ -851,7 +1145,8 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   value={memberFeedback}
                   onChange={(e) => setMemberFeedback(e.target.value)}
                   placeholder="اپنی رائے یا تاثرات تحریر فرمائیں..."
-                  className="w-full px-2.5 py-1 text-slate-900 border border-amber-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-xs"
+                  dir="rtl"
+                  className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 border border-amber-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-xs"
                 />
               </div>
 

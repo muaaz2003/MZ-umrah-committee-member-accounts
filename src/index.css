@@ -1,5 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap');
+
+@font-face {
+  font-family: 'Noto Nastaliq Urdu';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Noto Nastaliq Urdu';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Noto Naskh Arabic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Noto Naskh Arabic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+}
 
 @layer base {
   body {
@@ -11,18 +43,18 @@
 
 .font-urdu,
 .font-naskh {
-  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
   letter-spacing: 0 !important;
 }
 
 .font-nastaliq {
-  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, 'Jameel Noori Nastaleeq', serif;
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, 'Jameel Noori Nastaleeq', serif;
   line-height: 1.7;
   letter-spacing: 0 !important;
 }
 
 .font-nastaliq-tight {
-  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, 'Jameel Noori Nastaleeq', serif;
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, 'Jameel Noori Nastaleeq', serif;
   line-height: 1.45;
   letter-spacing: 0 !important;
 }
@@ -43,7 +75,42 @@
 #pdf-voucher-container input,
 #pdf-voucher-container textarea {
   line-height: 1.35;
-  font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', 'Noto Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+}
+
+#pdf-voucher-container input[dir="rtl"],
+#pdf-voucher-container textarea[dir="rtl"],
+#pdf-voucher-container input.text-right,
+#pdf-voucher-container textarea.text-right {
+  direction: rtl !important;
+  text-align: right !important;
+  padding-right: 14px !important;
+  padding-left: 8px !important;
+}
+
+#pdf-voucher-container input[dir="ltr"],
+#pdf-voucher-container input.text-left {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+#pdf-voucher-container input.text-center {
+  direction: ltr !important;
+  text-align: center !important;
+}
+
+.cloned-form-field-replacement {
+  box-sizing: border-box !important;
+  letter-spacing: 0 !important;
+  word-break: break-word !important;
+}
+
+.cloned-form-field-replacement[dir="rtl"],
+.cloned-form-field-replacement.text-right {
+  direction: rtl !important;
+  text-align: right !important;
+  padding-right: 14px !important;
+  padding-left: 8px !important;
 }
 
 @media print {
