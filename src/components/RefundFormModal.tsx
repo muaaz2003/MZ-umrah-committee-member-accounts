@@ -405,6 +405,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
           backgroundColor: '#ffffff',
           logging: false,
           onclone: async (clonedDoc, clonedElement) => {
+            // Fix A4 container width in the clone so layout is deterministic regardless of device screen size
+            clonedElement.style.width = '800px';
+            clonedElement.style.maxWidth = '800px';
+            clonedElement.style.minWidth = '800px';
+            clonedElement.style.boxSizing = 'border-box';
+            clonedElement.style.margin = '0 auto';
+
             // A. Inject @font-face rules into cloned iframe document head
             const styleEl = clonedDoc.createElement('style');
             styleEl.textContent = `
@@ -466,13 +473,22 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
               const replacement = clonedDoc.createElement('div');
               replacement.className = `${sourceInput.className} cloned-form-field-replacement`;
 
-              // Copy exact dimensions from live rendered input to ensure 0 layout shift
-              const widthPx = sourceInput.offsetWidth > 0 ? sourceInput.offsetWidth : parseFloat(computed.width);
-              const heightPx = sourceInput.offsetHeight > 0 ? sourceInput.offsetHeight : parseFloat(computed.height);
+              const heightPx = sourceInput.offsetHeight > 0 ? sourceInput.offsetHeight : (parseFloat(computed.height) || 30);
+              const isFullWidth = sourceInput.classList.contains('w-full') || computed.width.includes('%') || !sourceInput.style.width;
 
               replacement.style.boxSizing = 'border-box';
-              replacement.style.width = `${widthPx}px`;
               replacement.style.display = 'block';
+
+              // If the input is full-width (inside grid/flex cells), set 100% so it never overflows or touches siblings
+              if (isFullWidth) {
+                replacement.style.width = '100%';
+                replacement.style.maxWidth = '100%';
+                replacement.style.minWidth = '0';
+              } else {
+                const widthPx = sourceInput.offsetWidth > 0 ? sourceInput.offsetWidth : parseFloat(computed.width);
+                replacement.style.width = `${widthPx}px`;
+                replacement.style.maxWidth = '100%';
+              }
 
               // Copy live computed colors, borders, typography
               replacement.style.margin = computed.margin;
@@ -548,6 +564,29 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
               clonedInput.parentNode?.replaceChild(replacement, clonedInput);
             }
+
+            // C. Synchronize PDF selectable text layer coordinates with exact cloned positions
+            selectableFields.length = 0;
+            const clonedContainerRect = clonedElement.getBoundingClientRect();
+            const clonedReplacements = clonedElement.querySelectorAll<HTMLElement>('.cloned-form-field-replacement');
+
+            clonedReplacements.forEach((repEl) => {
+              const text = repEl.textContent?.trim() || '';
+              if (!text || text === '\u00A0') return;
+              const repRect = repEl.getBoundingClientRect();
+              const hasUrdu = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+              const repComp = window.getComputedStyle(repEl);
+              selectableFields.push({
+                val: text,
+                isUrdu: hasUrdu,
+                relX: (repRect.left - clonedContainerRect.left) / Math.max(1, clonedContainerRect.width),
+                relY: (repRect.top - clonedContainerRect.top) / Math.max(1, clonedContainerRect.height),
+                relW: repRect.width / Math.max(1, clonedContainerRect.width),
+                relH: repRect.height / Math.max(1, clonedContainerRect.height),
+                fontSize: parseFloat(repComp.fontSize) || 11,
+                textAlign: repComp.textAlign || (hasUrdu ? 'right' : 'left'),
+              });
+            });
           },
         });
 
@@ -691,58 +730,45 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
       <div className="relative bg-slate-100 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-300 w-full max-w-5xl my-auto overflow-hidden flex flex-col h-[94vh] max-h-[96vh]">
         
         {/* Top Control Bar aligned with App's Theme */}
-        <div className="w-full bg-[#064E3B] text-white px-3.5 sm:px-5 py-3 flex items-center justify-between gap-2.5 shrink-0 border-b border-emerald-950 shadow-sm">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="w-full bg-[#064E3B] text-white px-2.5 sm:px-5 py-2 sm:py-3 flex items-center justify-between gap-2 shrink-0 border-b border-emerald-950 shadow-sm">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
             <button
               type="button"
               onClick={handleClearAll}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/10 hover:bg-white/20 text-emerald-200 hover:text-white border border-white/15 flex items-center justify-center font-bold shrink-0 transition-colors cursor-pointer"
+              className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-white/10 hover:bg-white/20 text-emerald-200 hover:text-white border border-white/15 flex items-center justify-center font-bold shrink-0 transition-colors cursor-pointer"
               title="Reset / Clear all fields"
             >
-              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+              <RotateCcw className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
             </button>
-            <div className="min-w-0">
-              <h2 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2 truncate">
-                <span>فارم واپسی رقم (Refund Voucher)</span>
-                <span className="text-[10px] uppercase tracking-wider bg-emerald-800/90 border border-emerald-700/60 px-2 py-0.5 rounded-md text-emerald-200 font-semibold shrink-0">
-                  Official Portal
-                </span>
+            <div className="min-w-0 flex items-center gap-1.5 sm:gap-2">
+              <h2 className="text-xs sm:text-base font-bold text-white tracking-tight truncate">
+                فارم واپسی رقم (Refund Voucher)
               </h2>
-              <p className="text-[11px] sm:text-xs text-emerald-100/70 truncate hidden sm:block">
-                Professional Form with Urdu Nastaliq Typography & PDF Export.
-              </p>
+              <span className="text-[8.5px] sm:text-[10px] uppercase tracking-wider bg-emerald-800/90 border border-emerald-700/60 px-1.5 sm:px-2 py-0.5 rounded-md text-emerald-200 font-semibold shrink-0 hidden xs:inline-block">
+                Official
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Autofill Button */}
             <button
               type="button"
               onClick={handleAutofillFromMember}
-              className="px-2.5 sm:px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 active:scale-98 text-emerald-100 border border-emerald-700/60 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-2 sm:px-3 py-1 sm:py-1.5 bg-emerald-800 hover:bg-emerald-700 active:scale-98 text-emerald-100 border border-emerald-700/60 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
               title="Auto-fill with member details"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300" />
               <span>Auto-fill</span>
             </button>
 
             <button
               type="button"
               onClick={handleClearAll}
-              className="px-2.5 sm:px-3 py-1.5 bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 hover:text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer border border-emerald-700/60"
+              className="px-2 sm:px-3 py-1 sm:py-1.5 bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 hover:text-white rounded-xl text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer border border-emerald-700/60"
               title="Clear all fields"
             >
               Clear
-            </button>
-
-            <button
-              type="button"
-              disabled={isDownloadingPdf}
-              onClick={handleDownloadPDF}
-              className="px-3 sm:px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-98 text-emerald-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{isDownloadingPdf ? 'Generating...' : 'Download PDF'}</span>
             </button>
 
             <button
@@ -795,45 +821,45 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             {/* Top Ornamental Header Band */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b-2 border-emerald-800/80 pb-3 sm:pb-4 mb-3 sm:mb-4 gap-3 sm:gap-4">
               {/* Left Brand Identity */}
-              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 w-full sm:w-auto">
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-[#064E3B] text-amber-400 flex items-center justify-center font-bold shadow-md shadow-emerald-950/10 shrink-0">
                   <ShieldCheck className="w-6 h-6 sm:w-7 sm:h-7" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="text-base sm:text-xl md:text-2xl font-black text-[#064E3B] tracking-tight uppercase leading-tight truncate sm:whitespace-normal">
+                  <h1 className="text-sm xs:text-base sm:text-xl md:text-2xl font-black text-[#064E3B] tracking-tight uppercase leading-tight truncate sm:whitespace-normal">
                     M.Z.A UMRAH COMMITTEE
                   </h1>
-                  <p className="text-[10.5px] sm:text-xs font-bold text-slate-600 leading-tight mt-0.5 truncate sm:whitespace-normal">
+                  <p className="text-[10px] sm:text-xs font-bold text-slate-600 leading-tight mt-0.5 truncate sm:whitespace-normal">
                     Under the supervision of M.Z.A Welfare Pakistan
                   </p>
-                  <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 mt-1 inline-block">
+                  <span className="text-[8.5px] sm:text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 mt-0.5 inline-block">
                     Established in 2019 • Regd. Welfare Trust
                   </span>
                 </div>
               </div>
 
               {/* Right Metadata Block: Receipt No & Refund Date */}
-              <div className="w-full sm:w-auto flex flex-col sm:flex-row md:flex-col items-stretch sm:items-center md:items-end justify-between sm:justify-end gap-2 bg-slate-50/90 border border-slate-200 p-2 sm:p-2.5 rounded-xl text-xs shrink-0 shadow-2xs">
-                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
-                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs shrink-0">Voucher #:</span>
+              <div className="w-full sm:w-auto grid grid-cols-1 xs:grid-cols-2 md:grid-cols-1 gap-2 bg-slate-50/90 border border-slate-200 p-2 sm:p-2.5 rounded-xl text-xs shrink-0 shadow-2xs">
+                <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs shrink-0 whitespace-nowrap">Voucher #:</span>
                   <input
                     type="text"
                     value={voucherNumber}
                     onChange={(e) => setVoucherNumber(e.target.value)}
                     placeholder="#MZ-REF-0079"
                     dir="ltr"
-                    className="w-28 sm:w-32 px-2 py-1 font-mono font-bold text-xs text-rose-700 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-center shadow-2xs"
+                    className="w-28 xs:w-30 sm:w-32 px-2 py-1 min-h-[32px] font-mono font-bold text-xs text-rose-700 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-center shadow-2xs"
                   />
                 </div>
-                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
-                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs shrink-0">Date:</span>
+                <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+                  <span className="font-bold text-slate-700 text-[11px] sm:text-xs shrink-0 whitespace-nowrap">Date:</span>
                   <input
                     type="text"
                     value={refundDate}
                     onChange={(e) => setRefundDate(e.target.value)}
                     placeholder="DD-MMM-YYYY"
                     dir="ltr"
-                    className="w-28 sm:w-32 px-2 py-1 font-semibold text-xs text-slate-900 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-center shadow-2xs"
+                    className="w-28 xs:w-30 sm:w-32 px-2 py-1 min-h-[32px] font-semibold text-xs text-slate-900 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-center shadow-2xs"
                   />
                 </div>
               </div>
@@ -850,8 +876,8 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             </div>
 
             {/* SECTION 1: کوائف برائے ممبر (Member Bio-Data & Info) */}
-            <div className="mt-2.5 sm:mt-3 bg-slate-50/80 border border-slate-200/90 rounded-xl p-2.5 sm:p-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-1 mb-2">
+            <div className="mt-2.5 sm:mt-3 bg-slate-50/80 border border-slate-200/90 rounded-xl p-3 sm:p-4 overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-2.5">
                 <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                   Section 01 • Member Identification
                 </span>
@@ -861,10 +887,10 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
               </div>
 
               {/* Grid of Inputs with Urdu Nastaliq & English Subtitle */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-2.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3 sm:gap-x-4.5 sm:gap-y-3.5 text-xs">
                 {/* 1. نام ممبر */}
-                <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     نام ممبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Member Name)</span>
                   </label>
                   <input
@@ -875,14 +901,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       setSalutationName(e.target.value);
                     }}
                     placeholder="ممبر کا مکمل نام..."
-                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1.5 min-h-[38px] text-slate-900 font-bold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-[13.5px] shadow-2xs leading-normal"
                     dir="rtl"
                   />
                 </div>
 
                 {/* 2. ولدیت */}
-                <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     ولد / زوجہ: <span className="text-[10px] font-sans font-normal text-slate-500">(Father / Husband)</span>
                   </label>
                   <input
@@ -893,14 +919,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       setSalutationFather(e.target.value);
                     }}
                     placeholder="والد یا شوہر کا نام..."
-                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1.5 min-h-[38px] text-slate-900 font-bold border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-[13.5px] shadow-2xs leading-normal"
                     dir="rtl"
                   />
                 </div>
 
                 {/* 3. شناختی کارڈ نمبر */}
-                <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     شناختی کارڈ نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(CNIC Number)</span>
                   </label>
                   <input
@@ -909,13 +935,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setCnic(e.target.value)}
                     placeholder="42401-XXXXXXX-X"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2 py-1.5 min-h-[38px] text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs shadow-2xs"
                   />
                 </div>
 
                 {/* 4. ممبر شپ نمبر */}
-                <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     ممبر شپ نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Membership #)</span>
                   </label>
                   <input
@@ -924,13 +950,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setMemberNumber(e.target.value)}
                     placeholder="#FGN-085"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-rose-700 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2 py-1.5 min-h-[38px] text-rose-700 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs shadow-2xs"
                   />
                 </div>
 
                 {/* 5. گروپ نمبر */}
-                <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     گروپ نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Group #)</span>
                   </label>
                   <input
@@ -939,13 +965,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setGroupNumber(e.target.value)}
                     placeholder="#FGN-078"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-slate-800 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2 py-1.5 min-h-[38px] text-slate-800 font-bold font-mono border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs shadow-2xs"
                   />
                 </div>
 
                 {/* 6. فون نمبر */}
-                <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     فون نمبر: <span className="text-[10px] font-sans font-normal text-slate-500">(Contact / Mobile)</span>
                   </label>
                   <input
@@ -954,13 +980,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="0300XXXXXXX"
                     dir="ltr"
-                    className="w-full px-2 py-1 text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs"
+                    className="w-full px-2 py-1.5 min-h-[38px] text-slate-900 font-mono font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-center text-xs shadow-2xs"
                   />
                 </div>
 
                 {/* 7. رہائشی پتہ */}
-                <div className="sm:col-span-2">
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="col-span-1 sm:col-span-2 w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     مکان نمبر و رہائشی پتہ: <span className="text-[10px] font-sans font-normal text-slate-500">(Residential Address)</span>
                   </label>
                   <input
@@ -968,14 +994,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="مکان نمبر، بلاک، گلی، کالونی، شہر..."
-                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1.5 min-h-[38px] text-slate-900 font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-[13.5px] shadow-2xs leading-normal"
                     dir="rtl"
                   />
                 </div>
 
                 {/* 8. علاقہ */}
-                <div>
-                  <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq-tight text-xs" dir="rtl">
+                <div className="col-span-1 w-full">
+                  <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq-tight text-xs" dir="rtl">
                     علاقہ / تحصیل: <span className="text-[10px] font-sans font-normal text-slate-500">(Area / Town)</span>
                   </label>
                   <input
@@ -983,7 +1009,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     value={area}
                     onChange={(e) => setArea(e.target.value)}
                     placeholder="علاقہ مثلاً گلشن بہار، اورنگی..."
-                    className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq-tight text-xs"
+                    className="w-full pr-3.5 pl-2.5 py-1.5 min-h-[38px] text-slate-900 font-medium border border-slate-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-[13.5px] shadow-2xs leading-normal"
                     dir="rtl"
                   />
                 </div>
@@ -1010,7 +1036,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   onChange={(e) => setSalutationName(e.target.value)}
                   placeholder="نام محترم..."
                   dir="rtl"
-                  className="pr-3.5 pl-2 py-0.5 border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/80 rounded-md focus:outline-hidden min-w-[100px] sm:min-w-[130px] flex-1 sm:flex-initial text-right text-xs"
+                  className="pr-3.5 pl-2 py-1 min-h-[34px] border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/90 rounded-md focus:outline-hidden min-w-[110px] sm:min-w-[140px] flex-1 sm:flex-initial text-right font-nastaliq text-[13px] leading-normal"
                 />
                 <span className="font-bold text-[#064E3B]">ولد:</span>
                 <input
@@ -1019,14 +1045,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   onChange={(e) => setSalutationFather(e.target.value)}
                   placeholder="والد کا نام..."
                   dir="rtl"
-                  className="pr-3.5 pl-2 py-0.5 border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/80 rounded-md focus:outline-hidden min-w-[100px] sm:min-w-[130px] flex-1 sm:flex-initial text-right text-xs"
+                  className="pr-3.5 pl-2 py-1 min-h-[34px] border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/90 rounded-md focus:outline-hidden min-w-[110px] sm:min-w-[140px] flex-1 sm:flex-initial text-right font-nastaliq text-[13px] leading-normal"
                 />
                 <span className="font-bold text-[#064E3B]">صاحب —</span>
                 <span className="font-bold text-emerald-900 mr-auto text-xs">السلام علیکم ورحمۃ اللہ وبرکاتہ</span>
               </div>
 
               {/* Amount Statement in Figures & Words */}
-              <div className="bg-white p-2 sm:p-2.5 rounded-xl border border-emerald-200/80 shadow-xs space-y-2" dir="rtl">
+              <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-emerald-200/80 shadow-xs space-y-2.5" dir="rtl">
                 <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs font-nastaliq text-slate-900">
                   <span className="font-bold text-[#064E3B]">آپ کی عمرہ کمیٹی میں جمع ہونے والی کل رقم:</span>
                   <div className="flex items-center gap-1.5" dir="ltr">
@@ -1036,15 +1062,15 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       value={totalCollectedAmount}
                       onChange={(e) => handleAmountChange(e.target.value)}
                       placeholder="120,000"
-                      className="w-24 sm:w-28 px-2 py-0.5 font-mono font-black text-slate-950 border-2 border-emerald-700 rounded-lg text-center focus:outline-hidden bg-emerald-50/50 text-xs"
+                      className="w-28 sm:w-32 px-2 py-1 min-h-[34px] font-mono font-black text-slate-950 border-2 border-emerald-700 rounded-lg text-center focus:outline-hidden bg-emerald-50/50 text-xs"
                     />
                   </div>
                 </div>
 
                 {/* Amount in English and Urdu Words */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs" dir="ltr">
-                  <div>
-                    <label className="block text-slate-600 font-semibold mb-0.5 text-[10px] sm:text-[11px]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs" dir="ltr">
+                  <div className="w-full">
+                    <label className="block text-slate-600 font-semibold mb-1 text-[10px] sm:text-[11px]">
                       Amount in Words (English):
                     </label>
                     <input
@@ -1052,11 +1078,11 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       value={amountInWordsEnglish}
                       onChange={(e) => setAmountInWordsEnglish(e.target.value)}
                       placeholder="One Hundred Twenty Thousand Rupees Only"
-                      className="w-full px-2 py-0.5 font-medium border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 font-semibold"
+                      className="w-full px-2.5 py-1.5 min-h-[38px] font-medium border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 font-semibold shadow-2xs"
                     />
                   </div>
-                  <div dir="rtl">
-                    <label className="block text-right text-slate-700 font-bold mb-0.5 font-nastaliq-tight text-xs">
+                  <div dir="rtl" className="w-full">
+                    <label className="block text-right text-slate-700 font-bold mb-1 font-nastaliq-tight text-xs">
                       رقم بلحاظ الفاظ:
                     </label>
                     <input
@@ -1065,25 +1091,25 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       onChange={(e) => setAmountInWordsUrdu(e.target.value)}
                       placeholder="ایک لاکھ بیس ہزار"
                       dir="rtl"
-                      className="w-full pr-3.5 pl-2.5 py-1 font-bold font-nastaliq border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-xs text-rose-700 text-right"
+                      className="w-full pr-3.5 pl-2.5 py-1.5 min-h-[38px] font-bold font-nastaliq border border-slate-300 rounded-lg bg-slate-50 focus:outline-hidden focus:border-emerald-600 text-[13.5px] text-rose-700 text-right shadow-2xs leading-normal"
                     />
                   </div>
                 </div>
 
                 {/* Confirmation Inquiry & Member Acceptance */}
-                <div className="pt-1 border-t border-slate-200 text-xs font-nastaliq text-slate-800 space-y-1">
-                  <p className="leading-normal text-xs">
+                <div className="pt-2 border-t border-slate-200 font-nastaliq text-slate-800 space-y-2.5">
+                  <p className="text-[13px] sm:text-[14px] font-nastaliq leading-[2.3] tracking-wide text-slate-800 text-justify sm:text-right py-1">
                     عمرہ کمیٹی کی انتظامیہ نے آپ کی امانت کی رقم آپ کو واپس کر دی ہے۔ کیا آپ مطمئن ہیں اور اس رقم کی واپسی کی تصدیق کرتے ہیں؟
                   </p>
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-0.5 font-nastaliq text-slate-900 bg-emerald-50/60 p-1.5 sm:p-2 rounded-lg border border-emerald-200/60 text-xs">
-                    <span className="font-bold text-[#064E3B]">جی ہاں! میں نے</span>
+                  <div className="flex flex-wrap items-center justify-start gap-2 sm:gap-3 font-nastaliq text-slate-900 bg-emerald-50/70 p-2.5 sm:p-3 rounded-xl border border-emerald-200 text-xs sm:text-[13px] leading-relaxed">
+                    <span className="font-bold text-[#064E3B] shrink-0">جی ہاں! میں نے</span>
                     <input
                       type="text"
                       value={receivedFigure}
                       onChange={(e) => handleReceivedFigureChange(e.target.value)}
                       placeholder="120,000"
                       dir="ltr"
-                      className="w-20 sm:w-24 px-1.5 py-0.5 font-mono font-bold text-center border border-emerald-700 rounded-md bg-white focus:outline-hidden text-xs"
+                      className="w-24 sm:w-28 px-1.5 py-1 min-h-[34px] font-mono font-bold text-center border border-emerald-700 rounded-md bg-white focus:outline-hidden text-xs shadow-2xs"
                     />
                     <input
                       type="text"
@@ -1091,15 +1117,15 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       onChange={(e) => setReceivedWords(e.target.value)}
                       placeholder="ایک لاکھ بیس ہزار"
                       dir="rtl"
-                      className="flex-1 min-w-[120px] pr-3.5 pl-2.5 py-1 border border-slate-300 rounded-md bg-white text-rose-700 font-bold focus:outline-hidden text-right font-nastaliq text-xs"
+                      className="flex-1 min-w-[130px] sm:min-w-[180px] pr-3.5 pl-2.5 py-1.5 min-h-[38px] border border-slate-300 rounded-md bg-white text-rose-700 font-bold focus:outline-hidden text-right font-nastaliq text-[13.5px] leading-normal shadow-2xs"
                     />
-                    <span className="font-bold text-[#064E3B]">انتظامیہ عمرہ کمیٹی سے وصول کر لی ہے۔</span>
+                    <span className="font-bold text-[#064E3B] shrink-0">انتظامیہ عمرہ کمیٹی سے وصول کر لی ہے۔</span>
                   </div>
                 </div>
               </div>
 
               {/* Refund Description / Qist Details */}
-              <div className="my-1.5 sm:my-2 bg-white p-2 sm:p-2.5 rounded-xl border-2 border-emerald-600/30 shadow-xs space-y-1" dir="rtl">
+              <div className="my-1.5 sm:my-2 bg-white p-2.5 sm:p-3 rounded-xl border-2 border-emerald-600/30 shadow-xs space-y-1.5" dir="rtl">
                 <div className="flex items-center justify-between">
                   <label className="block text-right font-bold text-[#064E3B] font-nastaliq text-xs">
                     تفصیل برائے ریفنڈ / کونسی قسط ہے:
@@ -1114,7 +1140,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   onChange={(e) => setQistDescription(e.target.value)}
                   placeholder="مثلاً: قسط نمبر 1 تا 12، یا مکمل کمیٹی رقم برائے ریفنڈ / کینسلیشن..."
                   dir="rtl"
-                  className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 font-semibold border border-slate-300 rounded-lg focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 text-right font-nastaliq min-h-[36px] resize-y text-xs leading-normal"
+                  className="w-full pr-3.5 pl-2.5 py-1.5 text-slate-900 font-semibold border border-slate-300 rounded-lg focus:outline-hidden focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 text-right font-nastaliq min-h-[46px] resize-y text-[13px] leading-normal"
                 />
               </div>
             </div>
@@ -1131,13 +1157,13 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
               </div>
 
               {/* The Wadah statement in authentic Nastaliq Urdu */}
-              <p className="font-nastaliq text-xs sm:text-[13px] text-slate-900 leading-relaxed text-justify">
+              <p className="font-nastaliq text-[12.5px] sm:text-[13.5px] text-slate-900 leading-[2.3] tracking-wide text-justify py-1">
                 عمرہ کمیٹی نے معزز زائرین کی امانت شدہ رقوم واپس کر دی ہیں، اور کمیٹی نے اپنی ذمہ داریوں کو بحسن و خوبی انجام دیا ہے اور زائرین کے اعتماد کو برقرار رکھا ہے۔ اس طرح کی مثبت کارروائیاں یقیناً زائرین کے لیے اطمینان اور سکون کا باعث بنتی ہیں۔ کیا آپ انتظامیہ سے مطمئن ہیں؟
               </p>
 
               {/* Member Feedback Field */}
               <div className="pt-0.5">
-                <label className="block text-right font-bold text-slate-800 mb-0.5 font-nastaliq text-xs">
+                <label className="block text-right font-bold text-slate-800 mb-1 font-nastaliq text-xs">
                   برائے مہربانی اپنی رائے / اطمینان تحریر فرمائیں:
                 </label>
                 <input
@@ -1146,7 +1172,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   onChange={(e) => setMemberFeedback(e.target.value)}
                   placeholder="اپنی رائے یا تاثرات تحریر فرمائیں..."
                   dir="rtl"
-                  className="w-full pr-3.5 pl-2.5 py-1 text-slate-900 border border-amber-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-xs"
+                  className="w-full pr-3.5 pl-2.5 py-1.5 min-h-[38px] text-slate-900 border border-amber-300 rounded-lg bg-white focus:outline-hidden focus:border-emerald-600 text-right font-nastaliq text-[13.5px] leading-normal shadow-2xs"
                 />
               </div>
 
@@ -1206,14 +1232,14 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       <span>Sign Karein</span>
                     </button>
                   </div>
-                  <div className="text-[10px] flex items-center justify-start gap-1 pt-0.5 text-slate-600">
-                    <span className="font-semibold">Issue Date:</span>
+                  <div className="text-[10px] sm:text-[11px] flex items-center justify-start gap-1.5 mt-3.5 sm:mt-4 pt-1 text-slate-600">
+                    <span className="font-semibold whitespace-nowrap">Issue Date:</span>
                     <input
                       type="text"
                       value={issueDate}
                       onChange={(e) => setIssueDate(e.target.value)}
                       placeholder="DD-MMM-YYYY"
-                      className="w-20 sm:w-24 px-1.5 py-0.5 text-[10px] sm:text-[11px] font-mono border border-slate-300 rounded-md bg-white focus:outline-hidden"
+                      className="w-24 sm:w-28 px-2 py-1 min-h-[30px] text-[10px] sm:text-[11px] font-mono border border-slate-300 rounded-md bg-white focus:outline-hidden text-center shadow-2xs"
                     />
                   </div>
                 </div>
@@ -1244,7 +1270,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       <span>Sign Karein</span>
                     </button>
                   </div>
-                  <p className="text-[8.5px] sm:text-[9.5px] text-slate-500 text-right pt-0.5 font-sans">
+                  <p className="text-[8.5px] sm:text-[9.5px] text-slate-500 text-right mt-3.5 sm:mt-4 pt-1 font-sans">
                     Physical pen or digital signature verification
                   </p>
                 </div>
