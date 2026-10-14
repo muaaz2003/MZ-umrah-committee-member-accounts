@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
-import { Member, MemberStatus } from '../types';
+import { Member, MemberStatus, CommitteeSettings } from '../types';
 import { getNextMembershipNumber, createMember, updateMember } from '../services/firebaseService';
 import { DEFAULT_MONTHLY_INSTALLMENT, PLAN_A_TOTAL, PLAN_B_TOTAL, formatPKR } from '../utils/calculations';
 
@@ -31,6 +31,7 @@ interface AddMemberModalProps {
   memberToEdit?: Member | null;
   currentUserEmail: string;
   existingMembers?: Member[];
+  settings?: CommitteeSettings;
 }
 
 export const AddMemberModal: React.FC<AddMemberModalProps> = ({
@@ -41,7 +42,11 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   memberToEdit,
   currentUserEmail,
   existingMembers = [],
+  settings,
 }) => {
+  const defaultJoining = settings?.committeeStartDate || '2026-10-01';
+  const defaultFirstDue = settings?.firstInstallmentDueDate || '2026-10-10';
+
   const [memberNumber, setMemberNumber] = useState('MZA-#001');
   const [fullName, setFullName] = useState('');
   const [fatherName, setFatherName] = useState('');
@@ -49,7 +54,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const [mobile, setMobile] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [address, setAddress] = useState('');
-  const [joiningDate, setJoiningDate] = useState('2027-01-01');
+  const [joiningDate, setJoiningDate] = useState(defaultJoining);
+  const [firstInstallmentDueDate, setFirstInstallmentDueDate] = useState(defaultFirstDue);
   const [planMonths, setPlanMonths] = useState<24 | 36>(24);
   const [monthlyInstallment, setMonthlyInstallment] = useState<number | string>(5000);
   const [registrationFee, setRegistrationFee] = useState<number | string>(1000);
@@ -184,7 +190,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         setMobile(memberToEdit.mobile || '');
         setWhatsapp(memberToEdit.whatsapp || memberToEdit.mobile || '');
         setAddress(memberToEdit.address || '');
-        setJoiningDate(memberToEdit.joiningDate || '2027-01-01');
+        setJoiningDate(memberToEdit.joiningDate || defaultJoining);
+        setFirstInstallmentDueDate(memberToEdit.firstInstallmentDueDate || defaultFirstDue);
         setPlanMonths(memberToEdit.planMonths === 36 ? 36 : 24);
         setMonthlyInstallment(memberToEdit.monthlyInstallment || 5000);
         setRegistrationFee(memberToEdit.registrationFee ?? 1000);
@@ -206,7 +213,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         setMobile('');
         setWhatsapp('');
         setAddress('');
-        setJoiningDate('2027-01-01');
+        setJoiningDate(defaultJoining);
+        setFirstInstallmentDueDate(defaultFirstDue);
         setPlanMonths(24);
         setMonthlyInstallment(5000);
         setRegistrationFee(1000);
@@ -333,6 +341,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           whatsapp: whatsapp.trim() || mobile.trim(),
           address: address.trim(),
           joiningDate,
+          firstInstallmentDueDate,
           planMonths,
           monthlyInstallment: finalMonthly,
           totalCommitteeAmount: updatedTotal,
@@ -371,6 +380,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             whatsapp: whatsapp.trim() || mobile.trim(),
             address: address.trim(),
             joiningDate,
+            firstInstallmentDueDate,
             planMonths,
             monthlyInstallment: finalMonthly,
             totalCommitteeAmount: planMonths * finalMonthly,
@@ -731,7 +741,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             </div>
 
             {/* Dates & Fees Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
                   <span className="text-slate-900">تاریخ شمولیت *</span>{' '}
@@ -742,6 +752,21 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                   required
                   value={joiningDate}
                   onChange={(e) => setJoiningDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-800 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
+                  <span className="text-slate-900">پہلی قسط مقررہ تاریخ *</span>{' '}
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(1st Due Date)</bdi>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={firstInstallmentDueDate}
+                  onChange={(e) => setFirstInstallmentDueDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-800 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs font-medium"
                   dir="ltr"
                 />
@@ -1139,7 +1164,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                 {memberNumber || 'MZA-#001'}
               </div>
               <div className="text-[11px] text-slate-600 font-semibold mt-1 font-mono">
-                تاریخ شمولیت: {joiningDate || new Date().toISOString().split('T')[0]}
+                تاریخ شمولیت: {joiningDate || '2026-10-01'} | پہلی قسط: {firstInstallmentDueDate || '2026-10-10'}
               </div>
             </div>
           </div>

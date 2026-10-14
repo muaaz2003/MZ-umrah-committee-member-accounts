@@ -10,7 +10,13 @@ import {
   Filter,
 } from 'lucide-react';
 import { Installment, Member } from '../types';
-import { formatPKR, formatDateDisplay, isInstallmentOverdue } from '../utils/calculations';
+import {
+  formatPKR,
+  formatDateDisplay,
+  isInstallmentOverdue,
+  computeInstallmentStatus,
+  getTodayKarachiDate,
+} from '../utils/calculations';
 
 interface DueInstallmentsPageProps {
   installments: Installment[];
@@ -30,13 +36,14 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
   const [filterBucket, setFilterBucket] = useState<'all' | 'today' | '1-7' | '8-30' | '30+'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getTodayKarachiDate();
   const now = new Date().getTime();
 
-  // Filter installments that are not paid
+  // Filter installments that are not paid dynamically
   const dueList = installments.filter((i) => {
-    if (i.status === 'Paid') return false;
-    if (onlyOverdue && !isInstallmentOverdue(i)) return false;
+    const liveStatus = computeInstallmentStatus(i, todayStr);
+    if (liveStatus === 'Paid') return false;
+    if (onlyOverdue && liveStatus !== 'Overdue' && liveStatus !== 'Late') return false;
 
     // Days calculation
     const dueTime = new Date(i.dueDate).getTime();
@@ -232,15 +239,24 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
                       {formatPKR(inst.remainingAmount || inst.amount)}
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        inst.status === 'Overdue'
-                          ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                          : inst.status === 'Partial'
-                          ? 'bg-amber-100 text-amber-900'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {inst.status}
-                      </span>
+                      {(() => {
+                        const liveStatus = computeInstallmentStatus(inst, todayStr);
+                        return (
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              liveStatus === 'Overdue'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                : liveStatus === 'Partial'
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : liveStatus === 'Due'
+                                ? 'bg-yellow-100 text-yellow-900 border border-yellow-300'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {liveStatus}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-4 text-center">
                       {member && (

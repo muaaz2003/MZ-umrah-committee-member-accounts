@@ -239,7 +239,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
     setRefundReason('Member request / Committee plan cancellation voucher');
     setMemberFeedback('انتظامیہ کے احسن سلوک اور بروقت امانت کی واپسی پر مکمل مطمئن ہوں۔');
 
-    setRegistrationDate(member?.createdAt ? member.createdAt.split('T')[0] : '01-Jan-2027');
+    setRegistrationDate(member?.joiningDate || (member?.createdAt ? member.createdAt.split('T')[0] : '2026-10-01'));
     setCommitteePeriod(`${member?.planMonths || 24} ماہ (Months)`);
     setMonthlyInstallment(String(member?.monthlyInstallment || 5000));
     setTotalReceivedFigure(amt);
@@ -1317,7 +1317,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                       type="text"
                       value={registrationDate}
                       onChange={(e) => setRegistrationDate(e.target.value)}
-                      placeholder="01-Jan-2027"
+                      placeholder="2026-10-01"
                       className="w-24 sm:w-28 text-right font-mono text-emerald-900 font-bold border-b border-slate-300 bg-transparent focus:outline-hidden"
                     />
                   </div>

@@ -14,7 +14,7 @@ import {
   Info,
 } from 'lucide-react';
 import { Member, Installment, PaymentMethod, Receipt } from '../types';
-import { formatPKR } from '../utils/calculations';
+import { formatPKR, calculateInstallmentDueDate } from '../utils/calculations';
 import { recordPayment, recordManualPayment } from '../services/firebaseService';
 
 interface QistWasoolModalProps {
@@ -140,7 +140,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
       amount: monthlyAmt,
       paidAmount: 0,
       remainingAmount: monthlyAmt,
-      dueDate: `2027-${String((idx % 12) + 1).padStart(2, '0')}-10`,
+      dueDate: calculateInstallmentDueDate(selectedMember.firstInstallmentDueDate || '2026-10-10', idx + 1, 10),
       status: 'Due' as const,
       paymentId: '',
       receiptId: '',
@@ -518,7 +518,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
                     مقررہ تاریخ (Due Date: 10th)
                   </label>
                   <div className="px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 text-slate-700 font-mono font-bold flex items-center justify-between shadow-xs">
-                    <span>{selectedInstallment ? selectedInstallment.dueDate : '2027-01-10'}</span>
+                    <span>{selectedInstallment ? selectedInstallment.dueDate : (selectedMember?.firstInstallmentDueDate || '2026-10-10')}</span>
                     <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-sans font-bold">
                       10 تاریخ تک
                     </span>

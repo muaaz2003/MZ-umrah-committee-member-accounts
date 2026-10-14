@@ -16,10 +16,18 @@ import {
   Printer,
   ShieldAlert,
   Info,
+  RefreshCw,
 } from 'lucide-react';
 import { Member, Installment, Payment, Receipt, Refund, UserRole } from '../types';
-import { formatPKR, formatDateDisplay } from '../utils/calculations';
-import { getMemberInstallments, getMemberPayments, getMemberReceipts, getMemberRefunds, recordRefund } from '../services/firebaseService';
+import { formatPKR, formatDateDisplay, computeInstallmentStatus, getTodayKarachiDate } from '../utils/calculations';
+import {
+  getMemberInstallments,
+  getMemberPayments,
+  getMemberReceipts,
+  getMemberRefunds,
+  recordRefund,
+  rescheduleSingleMemberInstallments,
+} from '../services/firebaseService';
 import { RefundFormModal } from '../components/RefundFormModal';
 
 interface MemberProfilePageProps {
@@ -50,6 +58,26 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
 
   // Refund Modal State
   const [showRefundModal, setShowRefundModal] = useState(false);
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [rescheduleMsg, setRescheduleMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+
+  const handleFixMemberDates = async () => {
+    try {
+      setIsRescheduling(true);
+      setRescheduleMsg(null);
+      await rescheduleSingleMemberInstallments(member.id, '2026-10-10', currentUserEmail);
+      const updatedInsts = await getMemberInstallments(member.id);
+      setInstallments(updatedInsts);
+      onRefreshMember(member.id);
+      setRescheduleMsg({ text: 'قسطوں کی ڈیو ڈیٹس کامیابی سے 10 اکتوبر 2026 کے مطابق ٹھیک ہو گئیں۔' });
+      setTimeout(() => setRescheduleMsg(null), 6000);
+    } catch (err: any) {
+      console.error('Failed to reschedule member:', err);
+      setRescheduleMsg({ text: 'خرابی: ڈیٹس اپڈیٹ نہیں ہو سکیں۔ ' + (err?.message || ''), isError: true });
+    } finally {
+      setIsRescheduling(false);
+    }
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -86,10 +114,14 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
         return <span className="bg-amber-100 text-amber-700 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Partial</span>;
       case 'Overdue':
         return <span className="bg-rose-100 text-rose-700 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Overdue</span>;
+      case 'Due':
+        return <span className="bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Due Today</span>;
+      case 'Upcoming':
+        return <span className="bg-slate-100 text-slate-600 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Upcoming</span>;
       case 'Advance':
         return <span className="bg-blue-100 text-blue-700 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Advance</span>;
       default:
-        return <span className="bg-gray-100 text-gray-500 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Pending</span>;
+        return <span className="bg-gray-100 text-gray-500 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">{status || 'Upcoming'}</span>;
     }
   };
 
@@ -274,6 +306,39 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
               </div>
             </div>
 
+            {/* Banner for reschedule message or misaligned due dates */}
+            {rescheduleMsg && (
+              <div
+                className={`mx-4 mt-3 p-3 rounded-xl text-xs font-semibold flex items-center justify-between ${
+                  rescheduleMsg.isError
+                    ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                }`}
+              >
+                <span>{rescheduleMsg.text}</span>
+              </div>
+            )}
+
+            {userRole !== 'MEMBER' &&
+              installments.some((i) => i.installmentNumber === 1 && i.dueDate.startsWith('2027')) && (
+                <div className="mx-4 mt-3 p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="font-medium">
+                      اس ممبر کی پہلی قسط 2027 پر سیٹ ہے جب کہ کمیٹی 10 اکتوبر 2026 سے شروع ہوئی ہے۔
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleFixMemberDates}
+                    disabled={isRescheduling}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-xs cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRescheduling ? 'animate-spin' : ''}`} />
+                    <span>{isRescheduling ? 'ٹھیک ہو رہا ہے...' : 'ڈیٹس 10 اکتوبر 2026 پر سیٹ کریں'}</span>
+                  </button>
+                </div>
+              )}
+
             {/* Tab 1: Installment Schedule Table */}
             {activeTab === 'installments' && (
               <div className="p-4 overflow-x-auto">
@@ -291,8 +356,10 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {installments.map((inst) => {
+                      const todayStr = getTodayKarachiDate();
+                      const liveStatus = computeInstallmentStatus(inst, todayStr);
                       const receipt = receipts.find((r) => r.installmentNumber === inst.installmentNumber);
-                      const isToday = inst.status === 'Partial' || (inst.status !== 'Paid' && inst.dueDate.startsWith(new Date().toISOString().slice(0, 7)));
+                      const isToday = liveStatus === 'Partial' || (liveStatus !== 'Paid' && inst.dueDate.startsWith(todayStr.slice(0, 7)));
                       return (
                         <tr
                           key={inst.id}
@@ -316,7 +383,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                             {inst.paidAmount > 0 ? inst.paidAmount.toLocaleString() : '—'}
                           </td>
                           <td className="p-3 text-center">
-                            {getStatusBadge(inst.status)}
+                            {getStatusBadge(liveStatus)}
                           </td>
                           <td className="p-3 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -336,7 +403,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                                 </button>
                               )}
 
-                              {userRole !== 'MEMBER' && inst.status !== 'Paid' && (
+                              {userRole !== 'MEMBER' && liveStatus !== 'Paid' && (
                                 <button
                                   onClick={() => onOpenQistWasool(member, inst)}
                                   className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-emerald-950 rounded text-[10px] font-bold uppercase transition-colors"

@@ -93,6 +93,28 @@ export const DEFAULT_SETTINGS: CommitteeSettings = {
   adminPassword: '1234',
 };
 
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        return window.localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  },
+  setItem: (key: string, value: string): void => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch {
+        // ignore
+      }
+    }
+  },
+};
+
 // -------------------------------------------------------------
 // SETTINGS SERVICE & CLOUD ADMIN PASSWORD
 // -------------------------------------------------------------
@@ -104,7 +126,7 @@ export async function getSettings(): Promise<CommitteeSettings> {
     if (snap.exists()) {
       const data = snap.data() as CommitteeSettings;
       if (data.adminPassword) {
-        localStorage.setItem('mz_admin_custom_password', data.adminPassword);
+        safeStorage.setItem('mz_admin_custom_password', data.adminPassword);
       }
       return {
         id: snap.id,
@@ -120,7 +142,7 @@ export async function getSettings(): Promise<CommitteeSettings> {
     return DEFAULT_SETTINGS;
   } catch (error) {
     console.warn('Could not fetch settings from Firestore, returning cached or defaults:', error);
-    const cachedPass = localStorage.getItem('mz_admin_custom_password');
+    const cachedPass = safeStorage.getItem('mz_admin_custom_password');
     return {
       ...DEFAULT_SETTINGS,
       adminPassword: cachedPass || '1234',
@@ -134,7 +156,7 @@ export async function updateSettings(settings: Partial<CommitteeSettings>, userE
     const docRef = doc(db, path, 'general');
     await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
     if (settings.adminPassword) {
-      localStorage.setItem('mz_admin_custom_password', settings.adminPassword);
+      safeStorage.setItem('mz_admin_custom_password', settings.adminPassword);
     }
     await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_SETTINGS', 'Settings', 'general', 'Updated committee general settings');
   } catch (error) {
@@ -150,15 +172,15 @@ export async function getAdminPassword(): Promise<string> {
     if (snap.exists()) {
       const data = snap.data() as CommitteeSettings;
       if (data.adminPassword) {
-        localStorage.setItem('mz_admin_custom_password', data.adminPassword);
+        safeStorage.setItem('mz_admin_custom_password', data.adminPassword);
         return data.adminPassword;
       }
     }
-    const cached = localStorage.getItem('mz_admin_custom_password');
+    const cached = safeStorage.getItem('mz_admin_custom_password');
     return cached || '1234';
   } catch (error) {
     console.warn('Could not fetch cloud admin password, using local cache:', error);
-    return localStorage.getItem('mz_admin_custom_password') || '1234';
+    return safeStorage.getItem('mz_admin_custom_password') || '1234';
   }
 }
 
@@ -168,10 +190,10 @@ export async function updateAdminPassword(newPassword: string, userEmail: string
   try {
     const docRef = doc(db, path, 'general');
     await setDoc(docRef, { adminPassword: trimmed, updatedAt: new Date().toISOString() }, { merge: true });
-    localStorage.setItem('mz_admin_custom_password', trimmed);
+    safeStorage.setItem('mz_admin_custom_password', trimmed);
     await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_PASSWORD', 'Settings', 'general', 'Admin password updated in cloud database');
   } catch (error) {
-    localStorage.setItem('mz_admin_custom_password', trimmed);
+    safeStorage.setItem('mz_admin_custom_password', trimmed);
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
@@ -1417,10 +1439,10 @@ export function previewRescheduleInstallments(
     let memberOverdueCount = 0;
     let memberUpcomingCount = 0;
 
-    const memberFirstDueDate = member.firstInstallmentDueDate || targetFirstDueDate || '2026-10-10';
+    const baseFirstDueDate = targetFirstDueDate || '2026-10-10';
 
     for (const inst of memberInsts) {
-      const newDueDate = calculateInstallmentDueDate(memberFirstDueDate, inst.installmentNumber, 10);
+      const newDueDate = calculateInstallmentDueDate(baseFirstDueDate, inst.installmentNumber, 10);
       
       // Calculate new dynamic status while 100% PRESERVING paidAmount / remainingAmount
       const newStatus = computeInstallmentStatus(
@@ -1488,7 +1510,7 @@ export function previewRescheduleInstallments(
       memberNumber: member.memberNumber,
       fullName: member.fullName,
       planMonths: member.planMonths,
-      firstInstallmentDueDate: memberFirstDueDate,
+      firstInstallmentDueDate: baseFirstDueDate,
       totalInstallments: memberInsts.length,
       paidInstallmentsCount: memberPaidCount,
       overdueCount: memberOverdueCount,
@@ -1579,4 +1601,59 @@ export async function rescheduleAllMemberInstallments(
     overdueCount: preview.totalOverdueCount,
     warningsCount: preview.totalWarningsCount,
   };
+}
+
+/**
+ * Reschedule installments for a single member to start from targetFirstDueDate (default '2026-10-10').
+ * Safely preserves paidAmount, receipts, remainingAmount.
+ */
+export async function rescheduleSingleMemberInstallments(
+  memberId: string,
+  targetFirstDueDate: string = '2026-10-10',
+  userEmail: string = 'admin'
+): Promise<{ success: boolean; installmentsUpdated: number }> {
+  const member = await getMemberById(memberId);
+  if (!member) throw new Error('Member not found');
+
+  const allInsts = await getMemberInstallments(memberId);
+  if (allInsts.length === 0) return { success: true, installmentsUpdated: 0 };
+
+  const preview = previewRescheduleInstallments([member], allInsts, targetFirstDueDate);
+  const memberPreview = preview.previews[0];
+  if (!memberPreview) return { success: true, installmentsUpdated: 0 };
+
+  const changedDiffs = memberPreview.diffs.filter((d) => d.isDateChanged || d.isStatusChanged);
+  if (changedDiffs.length === 0) return { success: true, installmentsUpdated: 0 };
+
+  const batch = writeBatch(db);
+  for (const diff of changedDiffs) {
+    const instRef = doc(db, 'installments', diff.installmentId);
+    batch.update(instRef, {
+      dueDate: diff.newDueDate,
+      status: diff.newStatus,
+    });
+  }
+
+  const memberRef = doc(db, 'members', memberId);
+  batch.update(memberRef, {
+    firstInstallmentDueDate: targetFirstDueDate,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await batch.commit();
+
+  try {
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'RESCHEDULE_INSTALLMENTS',
+      'Installments',
+      memberId,
+      `Rescheduled member ${member.memberNumber} (${member.fullName}) installments to first due date ${targetFirstDueDate}. ${changedDiffs.length} installments updated.`
+    );
+  } catch (err) {
+    console.warn('Could not log audit:', err);
+  }
+
+  return { success: true, installmentsUpdated: changedDiffs.length };
 }

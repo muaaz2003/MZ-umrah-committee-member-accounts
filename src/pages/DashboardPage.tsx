@@ -27,7 +27,7 @@ import {
   Coins,
 } from 'lucide-react';
 import { Member, Payment, Receipt, FinancialSummary, Installment, Refund } from '../types';
-import { formatPKR, formatDateDisplay, getDaysLate } from '../utils/calculations';
+import { formatPKR, formatDateDisplay, getDaysLate, computeInstallmentStatus, getTodayKarachiDate } from '../utils/calculations';
 import { MemberCard } from '../components/MemberCard';
 
 interface DashboardPageProps {
@@ -101,8 +101,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   // Overdue Installments
   const overdueInstallments = useMemo(() => {
+    const todayStr = getTodayKarachiDate();
     return installments
-      .filter((i) => i.status === 'Overdue' || i.status === 'Late')
+      .filter((i) => computeInstallmentStatus(i, todayStr) === 'Overdue')
       .map((inst) => {
         const member = members.find((m) => m.id === inst.memberId);
         const daysLate = getDaysLate(inst.dueDate);

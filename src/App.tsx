@@ -650,12 +650,16 @@ export function App() {
             <SettingsPage
               settings={settings}
               onSaveSettings={async (newSettings) => {
-                await saveSettings(newSettings);
+                await saveSettings(newSettings, currentUser.email);
                 setSettingsState(newSettings);
+                await loadAllData(false);
               }}
               userRole={currentUser.role}
               currentUserEmail={currentUser.email}
               onBackupCompleted={() => loadAllData(false)}
+              members={members}
+              installments={installments}
+              onRescheduleCompleted={() => loadAllData(false)}
             />
           ) : (
             <div className="p-8 text-center text-slate-500">Page not found</div>
@@ -687,6 +691,7 @@ export function App() {
         memberToEdit={memberToEdit}
         currentUserEmail={currentUser.email}
         existingMembers={members}
+        settings={settings}
       />
 
       {/* Delete Member Confirmation (Surety) Modal */}
