@@ -169,7 +169,7 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by member name, MZ-#..., reference TID..."
+            placeholder="Search by member name, MZA-#..., reference TID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-hidden"

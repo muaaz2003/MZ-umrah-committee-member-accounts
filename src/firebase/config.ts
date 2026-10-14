@@ -1,25 +1,18 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// CRITICAL: Bind to the specific provisioned firestoreDatabaseId with auto-detect long polling
-// to ensure stable communication through proxies, Cloud Run, and sandboxed iframes.
-export const db = initializeFirestore(
-  app,
-  {
-    experimentalAutoDetectLongPolling: true,
-  },
-  firebaseConfig.firestoreDatabaseId
-);
+// CRITICAL: Bind to the specific provisioned firestoreDatabaseId as mandated by the Firebase skill
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
 // Test server connection as mandated in skill guidelines
 export async function testFirebaseConnection() {
   try {
-    await getDocFromServer(doc(db, 'settings', 'test-connection'));
+    await getDocFromServer(doc(db, 'test', 'connection'));
     console.log('Firebase connection verified.');
   } catch (error) {
     if (
@@ -34,4 +27,8 @@ export async function testFirebaseConnection() {
     }
   }
 }
-testFirebaseConnection();
+
+// Execute connection verification asynchronously without blocking module loading or app rendering
+setTimeout(() => {
+  testFirebaseConnection().catch(() => {});
+}, 500);

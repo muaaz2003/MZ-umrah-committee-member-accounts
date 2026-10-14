@@ -86,7 +86,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
       const pdfBlob = pdf.output('blob');
       const safeName = (receipt.memberName || 'Member').trim().replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
-      const safeReceiptNo = (receipt.receiptNumber || 'MZ-REC').replace(/[^a-zA-Z0-9_-]/g, '');
+      const safeReceiptNo = (receipt.receiptNumber || 'MZA-REC').replace(/[^a-zA-Z0-9_-]/g, '');
       const fileName = `${safeReceiptNo}_${safeName}_Receipt.pdf`;
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
@@ -99,7 +99,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         cleanPhone = '92' + cleanPhone;
       }
 
-      const waCaption = `السلام علیکم! محترم ممبر ${receipt.memberName}، یہ آپ کی ایم زیڈ عمرہ کمیٹی قسط رسید #${receipt.receiptNumber} (قسط #${receipt.installmentNumber} - مبلغ ${formatPKR(receipt.amount)}) کی تصدیق شدہ پی ڈی ایف رسید ہے۔`;
+      const waCaption = `السلام علیکم! محترم ممبر ${receipt.memberName}، یہ آپ کی ایم زیڈ اے عمرہ کمیٹی قسط رسید #${receipt.receiptNumber} (قسط #${receipt.installmentNumber} - مبلغ ${formatPKR(receipt.amount)}) کی تصدیق شدہ پی ڈی ایف رسید ہے۔`;
       const waEncoded = encodeURIComponent(waCaption);
 
       // Check if Web Share API supports direct file sharing (Mobile browsers)
@@ -228,7 +228,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 </div>
                 <div>
                   <h1 className="text-2xl font-black tracking-tight text-emerald-950 font-serif">
-                    MZ UMRAH COMMITTEE
+                    MZA UMRAH COMMITTEE
                   </h1>
                   <p className="text-xs font-bold text-amber-700 tracking-wider uppercase">
                     Established 2019 • Supervised by: M.Z.A Welfare Pakistan
@@ -389,19 +389,19 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <div className="flex flex-col items-center justify-end relative">
                 {/* Visual Official Stamp */}
                 <div className="absolute -top-6 w-24 h-24 rounded-full border-2 border-emerald-800/40 text-emerald-800/40 flex flex-col items-center justify-center text-[9px] font-extrabold uppercase rotate-[-12deg] pointer-events-none select-none">
-                  <span>MZ UMRAH</span>
+                  <span>MZA UMRAH</span>
                   <span className="text-[8px]">OFFICIAL</span>
                   <span>SEAL</span>
                 </div>
                 <div className="w-40 border-b border-dashed border-slate-400 mb-2"></div>
                 <span className="font-bold text-emerald-950">Abdul Shakoor Madni</span>
-                <span className="text-[10px] text-slate-500">Authorized Admin • MZ Umrah Committee</span>
+                <span className="text-[10px] text-slate-500">Authorized Admin • MZA Umrah Committee</span>
               </div>
             </div>
 
             {/* Footer Notice */}
             <div className="mt-6 pt-3 border-t border-slate-200 text-center text-[10px] text-slate-400">
-              MZ Umrah Committee Management System • This is a computer generated verifiable receipt • Verification ID: {receipt.id}
+              MZA Umrah Committee Management System • This is a computer generated verifiable receipt • Verification ID: {receipt.id}
             </div>
           </div>
         </div>

@@ -48,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
 
-  // Fast search by Name, Membership Number (MZ-#...), CNIC, Mobile, WhatsApp
+  // Fast search by Name, Membership Number (MZA-#...), CNIC, Mobile, WhatsApp
   const filteredMembers = searchQuery.trim()
     ? members.filter((m) => {
         const q = searchQuery.toLowerCase().trim();
@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
     };
     return (
       <div className="text-xs sm:text-sm font-bold text-gray-900 truncate">
-        {titles[currentPage] || 'MZ Umrah Committee'}
+        {titles[currentPage] || 'MZA Umrah Committee'}
       </div>
     );
   };
@@ -161,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search MZ-#..."
+                placeholder="Search MZA-#..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);

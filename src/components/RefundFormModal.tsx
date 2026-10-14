@@ -156,7 +156,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
       const now = new Date();
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const formattedDate = `${String(now.getDate()).padStart(2, '0')}-${months[now.getMonth()]}-${now.getFullYear()}`;
-      const autoVoucher = `MZ-REF-${Date.now().toString().slice(-4)}`;
+      const autoVoucher = `MZA-REF-${Date.now().toString().slice(-4)}`;
 
       setVoucherNumber((prev) => (prev ? prev : autoVoucher));
       setRefundDate((prev) => (prev ? prev : formattedDate));
@@ -216,7 +216,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   const handleAutofillFromMember = () => {
     const now = new Date();
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}-${now.toLocaleString('default', { month: 'short' })}-${now.getFullYear()}`;
-    const autoVoucher = `MZ-REF-${Date.now().toString().slice(-4)}`;
+    const autoVoucher = `MZA-REF-${Date.now().toString().slice(-4)}`;
 
     setVoucherNumber(autoVoucher);
     setRefundDate(formattedDate);
@@ -682,11 +682,11 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
       setStatusMessage(null);
 
       const targetMemberId = member ? member.id : `member_${Date.now()}`;
-      const voucher = voucherNumber.trim() || `MZ-REF-${Date.now().toString().slice(-4)}`;
+      const voucher = voucherNumber.trim() || `MZA-REF-${Date.now().toString().slice(-4)}`;
 
       const createdRefund = await recordRefund({
         memberId: targetMemberId,
-        memberNumber: memberNumber || (member ? member.memberNumber : 'MZ-REF'),
+        memberNumber: memberNumber || (member ? member.memberNumber : 'MZA-REF'),
         memberName: memberName || (member ? member.fullName : 'Valued Member'),
         fatherName: fatherName || (member ? member.fatherName : ''),
         cnic: cnic || (member ? member.cnic : ''),
@@ -846,7 +846,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                     type="text"
                     value={voucherNumber}
                     onChange={(e) => setVoucherNumber(e.target.value)}
-                    placeholder="#MZ-REF-0079"
+                    placeholder="#MZA-REF-0079"
                     dir="ltr"
                     className="w-28 xs:w-30 sm:w-32 px-2 py-1 min-h-[32px] font-mono font-bold text-xs text-rose-700 border border-slate-300 rounded-md bg-white focus:outline-hidden focus:border-emerald-600 text-center shadow-2xs"
                   />
@@ -1028,7 +1028,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
               </div>
 
               {/* Salutation Box */}
-              <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 text-xs font-nastaliq text-slate-900 leading-normal" dir="rtl">
+              <div className="flex flex-wrap items-center justify-start gap-1.5 sm:gap-2 text-xs font-nastaliq text-slate-900 leading-normal" dir="rtl">
                 <span className="font-bold text-[#064E3B]">محترم جناب:</span>
                 <input
                   type="text"
@@ -1048,7 +1048,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                   className="pr-3.5 pl-2 py-1 min-h-[34px] border-b-2 border-emerald-800 font-bold text-rose-700 bg-white/90 rounded-md focus:outline-hidden min-w-[110px] sm:min-w-[140px] flex-1 sm:flex-initial text-right font-nastaliq text-[13px] leading-normal"
                 />
                 <span className="font-bold text-[#064E3B]">صاحب —</span>
-                <span className="font-bold text-emerald-900 mr-auto text-xs">السلام علیکم ورحمۃ اللہ وبرکاتہ</span>
+                <span className="font-bold text-emerald-900 text-xs sm:text-[13px] text-right">السلام علیکم ورحمۃ اللہ وبرکاتہ</span>
               </div>
 
               {/* Amount Statement in Figures & Words */}
@@ -1151,13 +1151,17 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                 <span className="text-[10px] sm:text-[11px] font-bold text-amber-900 uppercase tracking-wider font-sans" dir="ltr">
                   Section 03 • Committee Undertaking & Member Feedback
                 </span>
-                <span className="text-xs sm:text-sm font-bold font-nastaliq text-amber-900">
+              </div>
+
+              {/* Alhamdulillah Callout on the Right */}
+              <div className="text-right pt-0.5" dir="rtl">
+                <span className="text-xs sm:text-sm font-bold font-nastaliq text-amber-950 inline-block text-right">
                   الحمد للہ!
                 </span>
               </div>
 
               {/* The Wadah statement in authentic Nastaliq Urdu */}
-              <p className="font-nastaliq text-[12.5px] sm:text-[13.5px] text-slate-900 leading-[2.3] tracking-wide text-justify py-1">
+              <p className="font-nastaliq text-[12.5px] sm:text-[13.5px] text-slate-900 leading-[2.3] tracking-wide text-justify py-0.5">
                 عمرہ کمیٹی نے معزز زائرین کی امانت شدہ رقوم واپس کر دی ہیں، اور کمیٹی نے اپنی ذمہ داریوں کو بحسن و خوبی انجام دیا ہے اور زائرین کے اعتماد کو برقرار رکھا ہے۔ اس طرح کی مثبت کارروائیاں یقیناً زائرین کے لیے اطمینان اور سکون کا باعث بنتی ہیں۔ کیا آپ انتظامیہ سے مطمئن ہیں؟
               </p>
 

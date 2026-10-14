@@ -27,6 +27,10 @@ import {
 import {
   calculateFinancialSummary,
   generateInstallmentSchedule,
+  calculateInstallmentDueDate,
+  computeInstallmentStatus,
+  getTodayKarachiDate,
+  COMMITTEE_FIRST_DUE_DATE,
   PLAN_A_TOTAL,
   PLAN_B_TOTAL,
   DEFAULT_MONTHLY_INSTALLMENT,
@@ -68,15 +72,17 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 export const DEFAULT_SETTINGS: CommitteeSettings = {
-  committeeName: 'MZ Umrah Committee',
+  committeeName: 'MZA Umrah Committee',
+  committeeStartDate: '2026-10-01',
+  firstInstallmentDueDate: '2026-10-10',
   supervisedBy: 'M.Z.A Welfare Pakistan',
   establishedYear: '2019',
   phone: '+92 300 8765432',
   email: 'mza.welfare.pk@gmail.com',
   website: 'https://mza-welfare.org',
   address: 'Suite #402, Business Arcade, Main Shahrah-e-Faisal, Karachi, Pakistan',
-  membershipPrefix: 'MZ-#',
-  receiptPrefix: 'MZ-RCP-',
+  membershipPrefix: 'MZA-#',
+  receiptPrefix: 'MZA-RCP-',
   defaultMonthlyInstallment: 5000,
   defaultDueDay: 10,
   registrationFee: 1000,
@@ -84,7 +90,7 @@ export const DEFAULT_SETTINGS: CommitteeSettings = {
   receiptFooter: 'Supervised by Abdul Shakoor Madni (M.Z.A Welfare Pakistan). Established 2019. May Allah accept your holy pilgrimage.',
   reminderText: 'Dear Member, please deposit your monthly Umrah committee installment before the 10th of this month.',
   signatoryName: 'Abdul Shakoor Madni (Admin)',
-  adminPassword: 'madni123',
+  adminPassword: '1234',
 };
 
 // -------------------------------------------------------------
@@ -100,13 +106,25 @@ export async function getSettings(): Promise<CommitteeSettings> {
       if (data.adminPassword) {
         localStorage.setItem('mz_admin_custom_password', data.adminPassword);
       }
-      return { id: snap.id, ...DEFAULT_SETTINGS, ...data };
+      return {
+        id: snap.id,
+        ...DEFAULT_SETTINGS,
+        ...data,
+        committeeStartDate: data.committeeStartDate || DEFAULT_SETTINGS.committeeStartDate,
+        firstInstallmentDueDate: data.firstInstallmentDueDate || DEFAULT_SETTINGS.firstInstallmentDueDate,
+        defaultDueDay: data.defaultDueDay || DEFAULT_SETTINGS.defaultDueDay,
+      };
     }
     // Set default settings
     await setDoc(docRef, DEFAULT_SETTINGS);
     return DEFAULT_SETTINGS;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn('Could not fetch settings from Firestore, returning cached or defaults:', error);
+    const cachedPass = localStorage.getItem('mz_admin_custom_password');
+    return {
+      ...DEFAULT_SETTINGS,
+      adminPassword: cachedPass || '1234',
+    };
   }
 }
 
@@ -137,10 +155,10 @@ export async function getAdminPassword(): Promise<string> {
       }
     }
     const cached = localStorage.getItem('mz_admin_custom_password');
-    return cached || 'madni123';
+    return cached || '1234';
   } catch (error) {
     console.warn('Could not fetch cloud admin password, using local cache:', error);
-    return localStorage.getItem('mz_admin_custom_password') || 'madni123';
+    return localStorage.getItem('mz_admin_custom_password') || '1234';
   }
 }
 
@@ -209,8 +227,21 @@ export async function getMembers(): Promise<Member[]> {
   try {
     const snap = await getDocs(collection(db, path));
     const members = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Member) }));
-    return members.sort((a, b) => (a.memberNumber > b.memberNumber ? 1 : -1));
+    const sorted = members.sort((a, b) => (a.memberNumber > b.memberNumber ? 1 : -1));
+    if (sorted.length > 0) {
+      try {
+        localStorage.setItem('mz_cached_members', JSON.stringify(sorted));
+      } catch {}
+    }
+    return sorted;
   } catch (error) {
+    console.warn('Could not fetch members from Firestore, checking cache:', error);
+    const cached = localStorage.getItem('mz_cached_members');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {}
+    }
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
@@ -231,16 +262,16 @@ export async function getNextMembershipNumber(): Promise<string> {
     const members = await getMembers();
     let maxNumber = 1;
     for (const m of members) {
-      // Expect format "MZ-#001", "MZ-#002", etc.
-      const match = m.memberNumber?.match(/MZ-#(\d+)/);
+      // Expect format "MZA-#001", "MZ-#001", etc.
+      const match = m.memberNumber?.match(/(?:MZA|MZ)-#(\d+)/);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num >= maxNumber) maxNumber = num + 1;
       }
     }
-    return `MZ-#${String(maxNumber).padStart(3, '0')}`;
+    return `MZA-#${String(maxNumber).padStart(3, '0')}`;
   } catch {
-    return `MZ-#001`;
+    return `MZA-#001`;
   }
 }
 
@@ -254,7 +285,8 @@ export async function createMember(
   const planMonths = data.planMonths === 36 ? 36 : 24;
   const monthly = Math.max(5000, Math.min(10000, Number(data.monthlyInstallment) || 5000));
   const totalAmount = data.totalCommitteeAmount || (planMonths * monthly);
-  const joiningDate = data.joiningDate || '2027-01-01';
+  const joiningDate = data.joiningDate || '2026-10-01';
+  const firstDueDate = data.firstInstallmentDueDate || '2026-10-10';
 
   const newMember: Member = {
     ...data,
@@ -263,6 +295,7 @@ export async function createMember(
     monthlyInstallment: monthly,
     totalCommitteeAmount: totalAmount,
     joiningDate,
+    firstInstallmentDueDate: firstDueDate,
     paidAmount: 0,
     dueAmount: totalAmount,
     advanceAmount: 0,
@@ -276,13 +309,13 @@ export async function createMember(
   const memberRef = doc(db, 'members', memberId);
   batch.set(memberRef, newMember);
 
-  // 2. Generate and batch add all 24 or 36 installments starting from 2027-01-01 on 10th
+  // 2. Generate and batch add all 24 or 36 installments starting from firstDueDate on 10th
   const schedule = generateInstallmentSchedule(
     memberId,
     newMember.memberNumber,
     newMember.planMonths,
     newMember.monthlyInstallment,
-    newMember.joiningDate,
+    firstDueDate,
     10
   );
 
@@ -467,15 +500,15 @@ export async function getNextReceiptNumber(): Promise<string> {
     let maxNumber = 1;
     for (const d of snap.docs) {
       const r = d.data() as Receipt;
-      const match = r.receiptNumber?.match(/MZ-RCP-(\d+)/);
+      const match = r.receiptNumber?.match(/(?:MZA|MZ)-RCP-(\d+)/);
       if (match) {
         const num = parseInt(match[1], 10);
         if (num >= maxNumber) maxNumber = num + 1;
       }
     }
-    return `MZ-RCP-${String(maxNumber).padStart(4, '0')}`;
+    return `MZA-RCP-${String(maxNumber).padStart(4, '0')}`;
   } catch {
-    return `MZ-RCP-0001`;
+    return `MZA-RCP-0001`;
   }
 }
 
@@ -709,7 +742,7 @@ export async function recordManualPayment(payload: RecordManualPaymentPayload): 
   const now = new Date().toISOString();
   const instNum = payload.installmentNumber || 1;
 
-  const memberNumber = payload.memberNumber || `MZ-M-${Date.now().toString().slice(-4)}`;
+  const memberNumber = payload.memberNumber || `MZA-M-${Date.now().toString().slice(-4)}`;
 
   const paymentRecord: Payment = {
     id: paymentId,
@@ -1185,4 +1218,365 @@ export async function getMemberRefunds(memberId: string): Promise<Refund[]> {
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'refunds');
   }
+}
+
+// -------------------------------------------------------------
+// FULL DATABASE BACKUP EXPORT SERVICE (READ-ONLY)
+// -------------------------------------------------------------
+export interface DatabaseBackupPayload {
+  exportedAt: string;
+  collections: {
+    members: any[];
+    installments: any[];
+    payments: any[];
+    receipts: any[];
+    refunds: any[];
+    auditLogs: any[];
+    settings: any[];
+  };
+}
+
+export function downloadJsonFile(data: unknown, filename: string): void {
+  const jsonStr = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+export async function createFullDatabaseBackup(userEmail: string = 'admin'): Promise<{
+  backupData: DatabaseBackupPayload;
+  filename: string;
+  stats: {
+    membersCount: number;
+    installmentsCount: number;
+    paymentsCount: number;
+    receiptsCount: number;
+    refundsCount: number;
+    auditLogsCount: number;
+    settingsCount: number;
+  };
+}> {
+  const collectionNames = [
+    'members',
+    'installments',
+    'payments',
+    'receipts',
+    'refunds',
+    'auditLogs',
+    'settings',
+  ] as const;
+
+  const results: Record<string, any[]> = {
+    members: [],
+    installments: [],
+    payments: [],
+    receipts: [],
+    refunds: [],
+    auditLogs: [],
+    settings: [],
+  };
+
+  for (const colName of collectionNames) {
+    try {
+      const snap = await getDocs(collection(db, colName));
+      results[colName] = snap.docs.map((d) => {
+        const data = d.data();
+        if (colName === 'settings') {
+          // Exclude adminPassword field from settings for security
+          const { adminPassword, ...safeSettings } = data;
+          return { id: d.id, ...safeSettings };
+        }
+        return { id: d.id, ...data };
+      });
+    } catch (err) {
+      console.warn(`Could not read collection ${colName} for backup:`, err);
+      results[colName] = [];
+    }
+  }
+
+  const now = new Date();
+  const exportedAt = now.toISOString();
+  const dateStr = exportedAt.split('T')[0];
+  const filename = `mz-backup-${dateStr}.json`;
+
+  const backupData: DatabaseBackupPayload = {
+    exportedAt,
+    collections: {
+      members: results.members,
+      installments: results.installments,
+      payments: results.payments,
+      receipts: results.receipts,
+      refunds: results.refunds,
+      auditLogs: results.auditLogs,
+      settings: results.settings,
+    },
+  };
+
+  // Record audit log entry: BACKUP_DOWNLOADED
+  try {
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'BACKUP_DOWNLOADED',
+      'Database',
+      'all_collections',
+      `Full system backup exported (${results.members.length} members, ${results.installments.length} installments, ${results.payments.length} payments, ${results.receipts.length} receipts, ${results.refunds.length} refunds, ${results.auditLogs.length} audit logs)`
+    );
+  } catch (auditErr) {
+    console.warn('Could not record BACKUP_DOWNLOADED audit log:', auditErr);
+  }
+
+  return {
+    backupData,
+    filename,
+    stats: {
+      membersCount: results.members.length,
+      installmentsCount: results.installments.length,
+      paymentsCount: results.payments.length,
+      receiptsCount: results.receipts.length,
+      refundsCount: results.refunds.length,
+      auditLogsCount: results.auditLogs.length,
+      settingsCount: results.settings.length,
+    },
+  };
+}
+
+// -------------------------------------------------------------
+// RESCHEDULE INSTALLMENTS (ADMIN-ONLY, CONTROLLED, WITH PREVIEW)
+// -------------------------------------------------------------
+export interface RescheduleInstallmentDiff {
+  installmentId: string;
+  installmentNumber: number;
+  oldDueDate: string;
+  newDueDate: string;
+  oldStatus: string;
+  newStatus: string;
+  paidAmount: number;
+  remainingAmount: number;
+  receiptNumber?: string;
+  isDateChanged: boolean;
+  isStatusChanged: boolean;
+}
+
+export interface MemberReschedulePreview {
+  memberId: string;
+  memberNumber: string;
+  fullName: string;
+  planMonths: number;
+  firstInstallmentDueDate: string;
+  totalInstallments: number;
+  paidInstallmentsCount: number;
+  overdueCount: number;
+  upcomingCount: number;
+  paidInstallmentNumbers: number[];
+  hasWarning: boolean;
+  warningMessage?: string;
+  diffs: RescheduleInstallmentDiff[];
+}
+
+export interface ReschedulePreviewSummary {
+  totalMembers: number;
+  totalInstallmentsToUpdate: number;
+  membersWithChangesCount: number;
+  totalPaidCount: number;
+  totalOverdueCount: number;
+  totalUpcomingCount: number;
+  totalWarningsCount: number;
+  previews: MemberReschedulePreview[];
+}
+
+export function previewRescheduleInstallments(
+  members: Member[],
+  allInstallments: Installment[],
+  targetFirstDueDate: string = '2026-10-10'
+): ReschedulePreviewSummary {
+  const todayStr = getTodayKarachiDate();
+  const previews: MemberReschedulePreview[] = [];
+  let totalInstallmentsToUpdate = 0;
+  let totalPaidCount = 0;
+  let totalOverdueCount = 0;
+  let totalUpcomingCount = 0;
+  let totalWarningsCount = 0;
+  let membersWithChangesCount = 0;
+
+  for (const member of members) {
+    const memberInsts = allInstallments
+      .filter((i) => i.memberId === member.id)
+      .sort((a, b) => a.installmentNumber - b.installmentNumber);
+
+    const diffs: RescheduleInstallmentDiff[] = [];
+    const paidInstallmentNumbers: number[] = [];
+    let memberHasChange = false;
+    let memberPaidCount = 0;
+    let memberOverdueCount = 0;
+    let memberUpcomingCount = 0;
+
+    const memberFirstDueDate = member.firstInstallmentDueDate || targetFirstDueDate || '2026-10-10';
+
+    for (const inst of memberInsts) {
+      const newDueDate = calculateInstallmentDueDate(memberFirstDueDate, inst.installmentNumber, 10);
+      
+      // Calculate new dynamic status while 100% PRESERVING paidAmount / remainingAmount
+      const newStatus = computeInstallmentStatus(
+        {
+          ...inst,
+          dueDate: newDueDate,
+        },
+        todayStr
+      );
+
+      const isDateChanged = inst.dueDate !== newDueDate;
+      const isStatusChanged = inst.status !== newStatus;
+
+      if (isDateChanged || isStatusChanged) {
+        memberHasChange = true;
+        totalInstallmentsToUpdate++;
+      }
+
+      const isPaid = (inst.paidAmount || 0) >= inst.amount || (inst.remainingAmount !== undefined && inst.remainingAmount <= 0) || inst.status === 'Paid';
+      if (isPaid || (inst.paidAmount || 0) > 0) {
+        paidInstallmentNumbers.push(inst.installmentNumber);
+      }
+
+      if (newStatus === 'Paid') {
+        memberPaidCount++;
+        totalPaidCount++;
+      } else if (newStatus === 'Overdue') {
+        memberOverdueCount++;
+        totalOverdueCount++;
+      } else {
+        memberUpcomingCount++;
+        totalUpcomingCount++;
+      }
+
+      diffs.push({
+        installmentId: inst.id,
+        installmentNumber: inst.installmentNumber,
+        oldDueDate: inst.dueDate,
+        newDueDate,
+        oldStatus: inst.status,
+        newStatus,
+        paidAmount: inst.paidAmount || 0,
+        remainingAmount: inst.remainingAmount !== undefined ? inst.remainingAmount : (inst.amount - (inst.paidAmount || 0)),
+        receiptNumber: inst.receiptNumber,
+        isDateChanged,
+        isStatusChanged,
+      });
+    }
+
+    if (memberHasChange) {
+      membersWithChangesCount++;
+    }
+
+    // Warning check: Is any payment allocated to installment # > 1, or in advance?
+    const paymentsOnOtherThanOne = paidInstallmentNumbers.filter((num) => num > 1);
+    const hasWarning = paymentsOnOtherThanOne.length > 0;
+    let warningMessage: string | undefined;
+    if (hasWarning) {
+      warningMessage = `دھیان دیں: ادائیگی قسط ۱ کے بجائے قسط نمبر ${paymentsOnOtherThanOne.join(', ')} پر لگی ہوئی ہے!`;
+      totalWarningsCount++;
+    }
+
+    previews.push({
+      memberId: member.id,
+      memberNumber: member.memberNumber,
+      fullName: member.fullName,
+      planMonths: member.planMonths,
+      firstInstallmentDueDate: memberFirstDueDate,
+      totalInstallments: memberInsts.length,
+      paidInstallmentsCount: memberPaidCount,
+      overdueCount: memberOverdueCount,
+      upcomingCount: memberUpcomingCount,
+      paidInstallmentNumbers,
+      hasWarning,
+      warningMessage,
+      diffs,
+    });
+  }
+
+  return {
+    totalMembers: members.length,
+    totalInstallmentsToUpdate,
+    membersWithChangesCount,
+    totalPaidCount,
+    totalOverdueCount,
+    totalUpcomingCount,
+    totalWarningsCount,
+    previews,
+  };
+}
+
+export async function rescheduleAllMemberInstallments(
+  members: Member[],
+  allInstallments: Installment[],
+  targetFirstDueDate: string = '2026-10-10',
+  userEmail: string = 'admin'
+): Promise<{
+  success: boolean;
+  membersUpdated: number;
+  installmentsUpdated: number;
+  paidPreserved: number;
+  overdueCount: number;
+  warningsCount: number;
+}> {
+  const preview = previewRescheduleInstallments(members, allInstallments, targetFirstDueDate);
+  let totalInstallmentsCommitted = 0;
+  let membersCommitted = 0;
+
+  for (const memberPreview of preview.previews) {
+    const changedDiffs = memberPreview.diffs.filter((d) => d.isDateChanged || d.isStatusChanged);
+    if (changedDiffs.length === 0) continue;
+
+    // Use separate writeBatch per member (max 36 docs per member, well below 500 limit)
+    const batch = writeBatch(db);
+
+    for (const diff of changedDiffs) {
+      const instRef = doc(db, 'installments', diff.installmentId);
+      // Strictly update ONLY dueDate and status. NEVER touch paidAmount, remainingAmount, receipts, etc.
+      batch.update(instRef, {
+        dueDate: diff.newDueDate,
+        status: diff.newStatus,
+      });
+      totalInstallmentsCommitted++;
+    }
+
+    // Also update member's firstInstallmentDueDate
+    const memberRef = doc(db, 'members', memberPreview.memberId);
+    batch.update(memberRef, {
+      firstInstallmentDueDate: targetFirstDueDate,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await batch.commit();
+    membersCommitted++;
+  }
+
+  // Record audit log
+  try {
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'RESCHEDULE_INSTALLMENTS',
+      'Installments',
+      'all',
+      `Applied installment schedule update: ${membersCommitted} members (${totalInstallmentsCommitted} installments updated) aligned to first installment due date ${targetFirstDueDate} (10th monthly). Paid records: ${preview.totalPaidCount}, Overdue: ${preview.totalOverdueCount}.`
+    );
+  } catch (err) {
+    console.warn('Could not write audit log for RESCHEDULE_INSTALLMENTS:', err);
+  }
+
+  return {
+    success: true,
+    membersUpdated: membersCommitted,
+    installmentsUpdated: totalInstallmentsCommitted,
+    paidPreserved: preview.totalPaidCount,
+    overdueCount: preview.totalOverdueCount,
+    warningsCount: preview.totalWarningsCount,
+  };
 }

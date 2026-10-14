@@ -8,15 +8,22 @@ import {
   Calendar,
   CreditCard,
   Users,
+  Database,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { Member, Payment, FinancialSummary, Installment } from '../types';
 import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import { createFullDatabaseBackup, downloadJsonFile } from '../services/firebaseService';
 
 interface ReportsPageProps {
   members: Member[];
   payments: Payment[];
   summary: FinancialSummary;
   installments: Installment[];
+  currentUserEmail?: string;
+  onBackupCompleted?: () => void;
 }
 
 export const ReportsPage: React.FC<ReportsPageProps> = ({
@@ -24,10 +31,36 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
   payments,
   summary,
   installments,
+  currentUserEmail,
+  onBackupCompleted,
 }) => {
   const [selectedReport, setSelectedReport] = useState<
     'collection' | 'members' | 'due' | 'plans' | 'methods'
   >('collection');
+
+  const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
+  const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+
+  const handleDownloadFullBackup = async () => {
+    setIsDownloadingBackup(true);
+    setBackupSuccess(null);
+    setBackupError(null);
+    try {
+      const email = currentUserEmail || 'admin';
+      const { backupData, filename, stats } = await createFullDatabaseBackup(email);
+      downloadJsonFile(backupData, filename);
+      setBackupSuccess(`پورا بیک اپ کامیابی سے ڈاؤن لوڈ ہو گیا! (${filename})`);
+      if (onBackupCompleted) onBackupCompleted();
+      setTimeout(() => setBackupSuccess(null), 6000);
+    } catch (err) {
+      console.error('Backup error:', err);
+      setBackupError('بیک اپ ڈاؤن لوڈ کرنے میں خرابی پیش آئی۔');
+      setTimeout(() => setBackupError(null), 5000);
+    } finally {
+      setIsDownloadingBackup(false);
+    }
+  };
 
   // Plan A vs Plan B
   const plan24Members = members.filter((m) => m.planMonths === 24);
@@ -65,7 +98,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `MZ_Umrah_${selectedReport}_report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `MZA_Umrah_${selectedReport}_report_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -85,10 +118,10 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => window.print()}
-            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs"
+            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Printer className="w-4 h-4 text-slate-500" />
             <span>Print Report</span>
@@ -96,13 +129,46 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
 
           <button
             onClick={handleExportCSV}
-            className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs"
+            className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
             <Download className="w-4 h-4 text-amber-300" />
             <span>Export CSV</span>
           </button>
+
+          <button
+            onClick={handleDownloadFullBackup}
+            disabled={isDownloadingBackup}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-emerald-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-98"
+            title="پورے کلاؤڈ ڈیٹابیس کی تمام 7 کلیکشنز کا محفوظ بیک اپ JSON فارمیٹ میں ڈاؤن لوڈ کریں"
+          >
+            {isDownloadingBackup ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-950" />
+                <span>ڈاؤن لوڈ ہو رہا ہے...</span>
+              </>
+            ) : (
+              <>
+                <Database className="w-4 h-4 text-emerald-950" />
+                <span>پورا بیک اپ ڈاؤن لوڈ کریں</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
+
+      {backupSuccess && (
+        <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{backupSuccess}</span>
+        </div>
+      )}
+
+      {backupError && (
+        <div className="p-3 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-medium flex items-center gap-2 animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{backupError}</span>
+        </div>
+      )}
 
       {/* Report Selector Tabs */}
       <div className="flex flex-wrap gap-2 no-print border-b border-slate-200 pb-3">

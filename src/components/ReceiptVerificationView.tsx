@@ -56,7 +56,7 @@ export const ReceiptVerificationView: React.FC<ReceiptVerificationViewProps> = (
           <div className="w-14 h-14 bg-emerald-800 text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-md">
             <span className="text-3xl">🕋</span>
           </div>
-          <h2 className="text-xl font-black tracking-wide">MZ UMRAH COMMITTEE</h2>
+          <h2 className="text-xl font-black tracking-wide">MZA UMRAH COMMITTEE</h2>
           <p className="text-xs text-amber-300 font-semibold uppercase tracking-wider">
             Official Receipt Verification Portal
           </p>

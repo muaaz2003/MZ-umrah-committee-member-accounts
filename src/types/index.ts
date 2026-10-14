@@ -6,7 +6,7 @@ export type UserRole = 'SUPER ADMIN' | 'ADMIN' | 'STAFF' | 'MEMBER';
 
 export interface Member {
   id: string;
-  memberNumber: string; // e.g. "MZ-#001"
+  memberNumber: string; // e.g. "MZA-#001"
   fullName: string;
   fatherName: string;
   cnic: string;
@@ -14,6 +14,7 @@ export interface Member {
   whatsapp: string;
   address: string;
   joiningDate: string; // YYYY-MM-DD
+  firstInstallmentDueDate?: string; // YYYY-MM-DD, e.g. "2026-10-10"
   planMonths: 24 | 36;
   monthlyInstallment: number; // default 5000
   totalCommitteeAmount: number; // 120,000 or 180,000
@@ -75,7 +76,7 @@ export interface Payment {
 
 export interface Receipt {
   id: string;
-  receiptNumber: string; // e.g. MZ-RCP-0001
+  receiptNumber: string; // e.g. MZA-RCP-0001
   memberId: string;
   memberNumber: string;
   memberName: string;
@@ -172,6 +173,8 @@ export interface CommitteeSettings {
   address: string;
   membershipPrefix: string;
   receiptPrefix: string;
+  committeeStartDate?: string; // e.g. "2026-10-01"
+  firstInstallmentDueDate?: string; // e.g. "2026-10-10"
   defaultMonthlyInstallment: number;
   defaultDueDay: number;
   registrationFee: number;

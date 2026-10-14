@@ -42,7 +42,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   currentUserEmail,
   existingMembers = [],
 }) => {
-  const [memberNumber, setMemberNumber] = useState('MZ-#001');
+  const [memberNumber, setMemberNumber] = useState('MZA-#001');
   const [fullName, setFullName] = useState('');
   const [fatherName, setFatherName] = useState('');
   const [cnic, setCnic] = useState('');
@@ -118,7 +118,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
       const pdfBlob = pdf.output('blob');
       const safeName = (fullName.trim() || 'Member').replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
-      const safeNum = (memberNumber || 'MZ').replace(/[^a-zA-Z0-9_-]/g, '');
+      const safeNum = (memberNumber || 'MZA').replace(/[^a-zA-Z0-9_-]/g, '');
       const fileName = `${safeNum}_${safeName}_Registration_Form.pdf`;
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
@@ -177,7 +177,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
     if (isOpen) {
       if (memberToEdit) {
         // Edit mode - prefill existing member info
-        setMemberNumber(memberToEdit.memberNumber || 'MZ-#001');
+        setMemberNumber(memberToEdit.memberNumber || 'MZA-#001');
         setFullName(memberToEdit.fullName || '');
         setFatherName(memberToEdit.fatherName || '');
         setCnic(memberToEdit.cnic || '');
@@ -224,13 +224,13 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         if (existingMembers && existingMembers.length > 0) {
           let maxNumber = 1;
           for (const m of existingMembers) {
-            const match = m.memberNumber?.match(/MZ-#(\d+)/);
+            const match = m.memberNumber?.match(/(?:MZA|MZ)-#(\d+)/);
             if (match) {
               const num = parseInt(match[1], 10);
               if (num >= maxNumber) maxNumber = num + 1;
             }
           }
-          setMemberNumber(`MZ-#${String(maxNumber).padStart(3, '0')}`);
+          setMemberNumber(`MZA-#${String(maxNumber).padStart(3, '0')}`);
         } else {
           getNextMembershipNumber().then((num) => setMemberNumber(num));
         }
@@ -566,7 +566,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                   onChange={(e) => setMemberNumber(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm font-mono font-bold bg-white border border-slate-300 rounded-xl text-emerald-950 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
                   dir="ltr"
-                  placeholder="MZ-001"
+                  placeholder="MZA-001"
                 />
               </div>
 
@@ -1123,20 +1123,20 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
               <div className="flex items-center gap-2 mb-1">
                 <span className="w-3 h-3 bg-emerald-700 rounded-full inline-block"></span>
                 <h1 className="text-2xl font-black text-emerald-950 font-urdu">
-                  ایم زیڈ عمرہ کمیٹی پاکستان
+                  ایم زیڈ اے عمرہ کمیٹی پاکستان
                 </h1>
               </div>
               <p className="text-xs text-emerald-800 font-bold font-urdu">
                 زیر سرپرستی: ایم زیڈ اے ویلفیئر ٹرسٹ (رجسٹرڈ) • قائم کردہ 2019
               </p>
               <p className="text-[10px] text-slate-500 font-sans font-bold uppercase tracking-wider mt-0.5">
-                MZ UMRAH COMMITTEE PAKISTAN • OFFICIAL MEMBER REGISTRATION FORM
+                MZA UMRAH COMMITTEE PAKISTAN • OFFICIAL MEMBER REGISTRATION FORM
               </p>
             </div>
 
             <div className="text-left flex flex-col items-end">
               <div className="bg-emerald-950 text-amber-300 px-3.5 py-1.5 rounded-lg text-sm font-mono font-black border border-emerald-800">
-                {memberNumber || 'MZ-#001'}
+                {memberNumber || 'MZA-#001'}
               </div>
               <div className="text-[11px] text-slate-600 font-semibold mt-1 font-mono">
                 تاریخ شمولیت: {joiningDate || new Date().toISOString().split('T')[0]}
@@ -1274,7 +1274,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
           {/* Footer note */}
           <div className="mt-6 pt-2 border-t border-slate-200 text-center text-[10px] text-slate-500 font-urdu">
-            ایم زیڈ عمرہ کمیٹی پاکستان • باضابطہ کمپیوٹرائزڈ ممبر فارم • جملہ حقوق بحق کمیٹی محفوظ ہیں۔
+            ایم زیڈ اے عمرہ کمیٹی پاکستان • باضابطہ کمپیوٹرائزڈ ممبر فارم • جملہ حقوق بحق کمیٹی محفوظ ہیں۔
           </div>
         </div>
       </div>

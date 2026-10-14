@@ -94,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-5 sm:p-6 border-b border-emerald-800 flex items-center justify-between">
           <div>
             <div className="text-xl font-black tracking-tight text-white flex items-center gap-2">
-              <span>MZ UMRAH</span>
+              <span>MZA UMRAH</span>
               <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-400 text-emerald-950 rounded">
                 PK
               </span>

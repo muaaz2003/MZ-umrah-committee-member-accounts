@@ -88,13 +88,6 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
     setMatchedMember(null);
   };
 
-  // Quick fill helper for testing/demo
-  const handleQuickDemo = (demoMember: Member) => {
-    setInputName(demoMember.fullName);
-    setInputCnic(demoMember.cnic);
-    setMatchedMember(demoMember);
-    setHasSearched(true);
-  };
 
   // Matched Member's installments sorted by installmentNumber 1 to 24 or 36
   const memberInstallments = useMemo(() => {
@@ -148,7 +141,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
           </div>
 
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white font-sans">
-            MZ Umrah Committee Performance & Financial Records
+            MZA Umrah Committee Performance & Financial Records
           </h1>
           <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-amber-300 font-urdu" dir="rtl">
             اپنا ذاتی ریکارڈ تلاش کریں
@@ -165,7 +158,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
               <span>تصدیق برائے ذاتی کھاتہ</span>
               <span dir="ltr" className="text-xs font-semibold text-gray-500 font-sans">(Personal Ledger Verification)</span>
             </h2>
-            <p className="text-xs text-gray-500 mt-1 font-urdu">
+            <p className="text-xs text-gray-500 mt-1 font-urdu leading-[22px] sm:leading-normal">
               سیکیورٹی کی خاطر ریکارڈ صرف اسی وقت ظاہر ہوگا جب نام اور CNIC دونوں بالکل میچ ہوں گے۔
             </p>
           </div>
@@ -237,7 +230,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
           </div>
 
           {/* Action Button */}
-          <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4" dir="rtl">
+          <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-start gap-4" dir="rtl">
             <button
               type="submit"
               dir="rtl"
@@ -247,22 +240,6 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
               <span>ریکارڈ تلاش کریں</span>
               <span dir="ltr" className="font-sans text-[11px] font-black tracking-wide">(SEARCH RECORD)</span>
             </button>
-
-            {/* Quick Demo Sample Pills without "مثال برائے ٹیسٹ:" span in RTL */}
-            {members.length > 0 && !matchedMember && (
-              <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1.5 justify-end" dir="rtl">
-                {members.slice(0, 3).map((demoMember) => (
-                  <button
-                    key={demoMember.id}
-                    type="button"
-                    onClick={() => handleQuickDemo(demoMember)}
-                    className="px-3 py-1 bg-gray-100 hover:bg-emerald-50 hover:text-emerald-800 text-gray-700 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border border-gray-200 font-urdu"
-                  >
-                    {demoMember.fullName}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </form>
       </div>
@@ -347,7 +324,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                     <span>شمولیت: {formatDateDisplay(matchedMember.joiningDate)}</span>
                   </div>
                   <div className="text-[11px] text-emerald-300">
-                    ایڈمن: عبد الشکور مدنی (MZ Umrah)
+                    ایڈمن: عبد الشکور مدنی (MZA Umrah)
                   </div>
                 </div>
               </div>
@@ -624,7 +601,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
           <div className="p-6 bg-emerald-950 text-emerald-100 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
             <div>
               <div className="font-bold text-white text-sm">
-                ایم زیڈ عمرہ کمیٹی پاکستان (MZ Umrah Committee)
+                ایم زیڈ اے عمرہ کمیٹی پاکستان (MZA Umrah Committee)
               </div>
               <div className="text-emerald-300/80 mt-0.5">
                 نگران اعلیٰ و ایڈمن: عبد الشکور مدنی • رابطہ: +92 300 8765432

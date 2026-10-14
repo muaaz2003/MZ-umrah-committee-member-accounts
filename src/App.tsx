@@ -88,14 +88,31 @@ export function App() {
     };
   });
 
-  // Database Data States
-  const [members, setMembers] = useState<Member[]>([]);
+  // Database Data States with instant local cache hydration
+  const [members, setMembers] = useState<Member[]>(() => {
+    try {
+      const cached = localStorage.getItem('mz_cached_members');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [payments, setPayments] = useState<Payment[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [settings, setSettingsState] = useState<CommitteeSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettingsState] = useState<CommitteeSettings>(() => {
+    try {
+      const cachedPass = localStorage.getItem('mz_admin_custom_password');
+      return {
+        ...DEFAULT_SETTINGS,
+        adminPassword: cachedPass || '1234',
+      };
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
+  });
   const [loading, setLoading] = useState(true);
 
   // Modals
@@ -122,20 +139,25 @@ export function App() {
   // Fetch data from Firestore.
   // showSpinner = true ONLY on the initial app mount. Subsequent updates refresh silently in background.
   const loadAllData = async (showSpinner: boolean = false) => {
+    let safetyTimer: any;
+    if (showSpinner) {
+      setLoading(true);
+      // Hard safety timer: Under NO circumstances should loading exceed 1.5 seconds
+      safetyTimer = setTimeout(() => {
+        setLoading(false);
+      }, 1500);
+    }
+
     try {
-      if (showSpinner) {
-        setLoading(true);
-        await seedInitialDemoDataIfEmpty();
-      }
       const [
-        membersData,
-        paymentsData,
-        receiptsData,
-        installmentsData,
-        refundsData,
-        auditLogsData,
-        settingsData,
-      ] = await Promise.all([
+        membersResult,
+        paymentsResult,
+        receiptsResult,
+        installmentsResult,
+        refundsResult,
+        auditLogsResult,
+        settingsResult,
+      ] = await Promise.allSettled([
         getAllMembers(),
         getAllPayments(),
         getAllReceipts(),
@@ -145,18 +167,43 @@ export function App() {
         getSettings(),
       ]);
 
-      setMembers(membersData || []);
-      setPayments(paymentsData || []);
-      setReceipts(receiptsData || []);
-      setInstallments(installmentsData || []);
-      setRefunds(refundsData || []);
-      setAuditLogs(auditLogsData || []);
+      const membersData = membersResult.status === 'fulfilled' && membersResult.value ? membersResult.value : [];
+      const paymentsData = paymentsResult.status === 'fulfilled' && paymentsResult.value ? paymentsResult.value : [];
+      const receiptsData = receiptsResult.status === 'fulfilled' && receiptsResult.value ? receiptsResult.value : [];
+      const installmentsData = installmentsResult.status === 'fulfilled' && installmentsResult.value ? installmentsResult.value : [];
+      const refundsData = refundsResult.status === 'fulfilled' && refundsResult.value ? refundsResult.value : [];
+      const auditLogsData = auditLogsResult.status === 'fulfilled' && auditLogsResult.value ? auditLogsResult.value : [];
+      const settingsData = settingsResult.status === 'fulfilled' && settingsResult.value ? settingsResult.value : null;
+
+      if (membersData && membersData.length > 0) {
+        setMembers(membersData);
+        try {
+          localStorage.setItem('mz_cached_members', JSON.stringify(membersData));
+        } catch {}
+      } else if (showSpinner && membersResult.status === 'fulfilled' && membersData.length === 0) {
+        // Only seed demo data if the remote database is verified completely empty
+        await seedInitialDemoDataIfEmpty();
+        const freshMembers = await getAllMembers().catch(() => []);
+        if (freshMembers && freshMembers.length > 0) {
+          setMembers(freshMembers);
+        }
+      }
+
+      setPayments(paymentsData);
+      setReceipts(receiptsData);
+      setInstallments(installmentsData);
+      setRefunds(refundsData);
+      setAuditLogs(auditLogsData);
       if (settingsData) {
         setSettingsState(settingsData);
+        if (settingsData.adminPassword) {
+          localStorage.setItem('mz_admin_custom_password', settingsData.adminPassword);
+        }
       }
     } catch (err) {
       console.error('Error loading Firestore data:', err);
     } finally {
+      if (safetyTimer) clearTimeout(safetyTimer);
       if (showSpinner) {
         setLoading(false);
       }
@@ -415,12 +462,19 @@ export function App() {
 
         {/* Page Content Container */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-24 space-y-4">
+          {loading && members.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 space-y-4">
               <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
               <p className="text-sm font-semibold text-emerald-900">
-                Synchronizing MZ Umrah Committee Ledger...
+                Synchronizing MZA Umrah Committee Ledger...
               </p>
+              <button
+                type="button"
+                onClick={() => setLoading(false)}
+                className="text-xs text-emerald-700 underline hover:text-emerald-900 cursor-pointer pt-2"
+              >
+                براہ راست صفحہ کھولیں (Open Page Now)
+              </button>
             </div>
           ) : !isAdminLoggedIn || currentPage === 'zati-record' ? (
             /* Public Member Record Search Page ("Apna Zati Record Talash Karein") */
@@ -585,6 +639,8 @@ export function App() {
               payments={payments}
               summary={summary}
               installments={installments}
+              currentUserEmail={currentUser.email}
+              onBackupCompleted={() => loadAllData(false)}
             />
           ) : currentPage === 'audit-logs' ? (
             /* Audit Logs */
@@ -598,6 +654,8 @@ export function App() {
                 setSettingsState(newSettings);
               }}
               userRole={currentUser.role}
+              currentUserEmail={currentUser.email}
+              onBackupCompleted={() => loadAllData(false)}
             />
           ) : (
             <div className="p-8 text-center text-slate-500">Page not found</div>

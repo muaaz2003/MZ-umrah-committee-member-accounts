@@ -10,7 +10,8 @@ import {
 export const DEFAULT_MONTHLY_INSTALLMENT = 5000;
 export const MIN_MONTHLY_INSTALLMENT = 5000;
 export const MAX_MONTHLY_INSTALLMENT = 10000;
-export const COMMITTEE_START_DATE = '2027-01-01';
+export const COMMITTEE_START_DATE = '2026-10-01';
+export const COMMITTEE_FIRST_DUE_DATE = '2026-10-10';
 export const COMMITTEE_DUE_DAY = 10; // 10th of every month
 export const PLAN_A_MONTHS = 24;
 export const PLAN_B_MONTHS = 36;
@@ -192,41 +193,145 @@ export function calculateFinancialSummary(
   };
 }
 
+/**
+ * Returns current date string 'YYYY-MM-DD' strictly in Asia/Karachi timezone.
+ * Avoids any UTC or client browser midnight timezone skew.
+ */
+export function getTodayKarachiDate(): string {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Karachi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(new Date()); // Formats as YYYY-MM-DD
+  } catch {
+    const d = new Date();
+    const karachiTime = new Date(d.getTime() + (d.getTimezoneOffset() + 300) * 60000);
+    const y = karachiTime.getFullYear();
+    const m = String(karachiTime.getMonth() + 1).padStart(2, '0');
+    const day = String(karachiTime.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+}
+
+/**
+ * Parses 'YYYY-MM-DD' safely without any timezone conversion.
+ */
+export function parseDateParts(dateStr: string | undefined | null): { year: number; month: number; day: number } {
+  if (!dateStr || typeof dateStr !== 'string') {
+    return { year: 2026, month: 10, day: 10 };
+  }
+  const clean = dateStr.trim().split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length >= 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return { year: y, month: m, day: d };
+    }
+  }
+  return { year: 2026, month: 10, day: 10 };
+}
+
+/**
+ * Calculates due date for installment #n starting from firstInstallmentDueDate (default 2026-10-10).
+ * Handles year/month rollover seamlessly (e.g. Dec 2026 -> Jan 2027).
+ * Target day is fixed to 10th (or capped at 28).
+ */
+export function calculateInstallmentDueDate(
+  firstDueDateStr: string = COMMITTEE_FIRST_DUE_DATE,
+  installmentNumber: number,
+  targetDueDay: number = COMMITTEE_DUE_DAY
+): string {
+  const { year: baseYear, month: baseMonth } = parseDateParts(firstDueDateStr || COMMITTEE_FIRST_DUE_DATE);
+  const safeDay = Math.min(Math.max(1, targetDueDay || COMMITTEE_DUE_DAY), 28);
+
+  // Installment 1 has offset 0, Installment 2 has offset 1, etc.
+  const offset = Math.max(0, installmentNumber - 1);
+  const totalMonths = (baseMonth - 1) + offset;
+  const newYear = baseYear + Math.floor(totalMonths / 12);
+  const newMonth = (totalMonths % 12) + 1;
+
+  const yyyy = String(newYear);
+  const mm = String(newMonth).padStart(2, '0');
+  const dd = String(safeDay).padStart(2, '0');
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Dynamically computes installment status based on payment state and today's Karachi date.
+ * - Paid: remaining is 0 or paidAmount >= amount
+ * - Partial: paidAmount > 0 and remaining > 0
+ * - Overdue: unpaid and dueDate < today
+ * - Due: unpaid and dueDate === today
+ * - Upcoming: unpaid and dueDate > today
+ */
+export function computeInstallmentStatus(
+  inst: {
+    dueDate: string;
+    amount: number;
+    paidAmount?: number;
+    remainingAmount?: number;
+    status?: InstallmentStatus;
+  },
+  todayStr: string = getTodayKarachiDate()
+): InstallmentStatus {
+  const amount = Number(inst.amount) || 0;
+  const paid = Number(inst.paidAmount) || 0;
+  const remaining = inst.remainingAmount !== undefined ? Number(inst.remainingAmount) : Math.max(0, amount - paid);
+
+  if (remaining <= 0 || (paid >= amount && amount > 0)) {
+    return 'Paid';
+  }
+
+  if (paid > 0) {
+    return 'Partial';
+  }
+
+  const due = (inst.dueDate || '').split('T')[0];
+  if (!due) return 'Upcoming';
+
+  if (due < todayStr) {
+    return 'Overdue';
+  } else if (due === todayStr) {
+    return 'Due';
+  } else {
+    return 'Upcoming';
+  }
+}
+
 export function generateInstallmentSchedule(
   memberId: string,
   memberNumber: string,
   planMonths: 24 | 36,
   monthlyInstallment: number,
-  joiningDateStr: string = COMMITTEE_START_DATE,
+  firstDueDateOrJoiningDate: string = COMMITTEE_FIRST_DUE_DATE,
   fixedDueDay: number = COMMITTEE_DUE_DAY
 ): Omit<Installment, 'id'>[] {
   const installments: Omit<Installment, 'id'>[] = [];
-  const baseDate = new Date(joiningDateStr || COMMITTEE_START_DATE);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayStr = getTodayKarachiDate();
 
-  const startYear = baseDate.getFullYear();
-  const startMonth = baseDate.getMonth();
-  // Fixed due date is always the 10th of every month
+  // If firstDueDateOrJoiningDate is like "2026-10-01", adjust target due date to the 10th
+  const parts = parseDateParts(firstDueDateOrJoiningDate || COMMITTEE_FIRST_DUE_DATE);
   const targetDay = fixedDueDay && fixedDueDay >= 1 && fixedDueDay <= 28 ? fixedDueDay : COMMITTEE_DUE_DAY;
+  const baseFirstDueDate = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
 
   for (let i = 1; i <= planMonths; i++) {
-    const dueDate = new Date(startYear, startMonth + (i - 1), targetDay);
-    // Ensure 2-digit format
-    const yyyy = dueDate.getFullYear();
-    const mm = String(dueDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(dueDate.getDate()).padStart(2, '0');
-    const formattedDueDate = `${yyyy}-${mm}-${dd}`;
+    const formattedDueDate = calculateInstallmentDueDate(baseFirstDueDate, i, targetDay);
 
-    const isPastDue = dueDate < today;
-    const isToday = dueDate.getTime() === today.getTime();
-
-    let initialStatus: InstallmentStatus = 'Upcoming';
-    if (isToday) {
-      initialStatus = 'Due';
-    } else if (isPastDue) {
-      initialStatus = 'Overdue';
-    }
+    const initialStatus = computeInstallmentStatus(
+      {
+        dueDate: formattedDueDate,
+        amount: monthlyInstallment,
+        paidAmount: 0,
+        remainingAmount: monthlyInstallment,
+      },
+      todayStr
+    );
 
     installments.push({
       memberId,
@@ -245,19 +350,23 @@ export function generateInstallmentSchedule(
 }
 
 export function isInstallmentOverdue(inst: Installment): boolean {
-  if (!inst || inst.status === 'Paid') return false;
-  if (inst.status === 'Overdue' || inst.status === 'Late') return true;
-  const todayStr = new Date().toISOString().split('T')[0];
-  return inst.dueDate < todayStr;
+  if (!inst) return false;
+  const status = computeInstallmentStatus(inst);
+  return status === 'Overdue' || status === 'Late';
 }
 
 export function getDaysLate(dueDateStr: string): number {
   if (!dueDateStr) return 0;
-  const due = new Date(dueDateStr);
-  due.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffTime = today.getTime() - due.getTime();
+  const todayStr = getTodayKarachiDate();
+  if (dueDateStr >= todayStr) return 0;
+
+  const { year: dy, month: dm, day: dd } = parseDateParts(dueDateStr);
+  const { year: ty, month: tm, day: td } = parseDateParts(todayStr);
+
+  const dueTime = Date.UTC(dy, dm - 1, dd);
+  const todayTime = Date.UTC(ty, tm - 1, td);
+
+  const diffTime = todayTime - dueTime;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return Math.max(0, diffDays);
 }

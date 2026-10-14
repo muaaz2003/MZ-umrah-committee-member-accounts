@@ -11,23 +11,39 @@ import {
   AlertCircle,
   ShieldCheck,
   Loader2,
+  Database,
+  Download,
 } from 'lucide-react';
 import { CommitteeSettings, UserRole } from '../types';
-import { updateAdminPassword, getAdminPassword } from '../services/firebaseService';
+import {
+  updateAdminPassword,
+  getAdminPassword,
+  createFullDatabaseBackup,
+  downloadJsonFile,
+} from '../services/firebaseService';
 
 interface SettingsPageProps {
   settings: CommitteeSettings;
   onSaveSettings: (settings: CommitteeSettings) => void;
   userRole: UserRole;
+  currentUserEmail?: string;
+  onBackupCompleted?: () => void;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings: initialSettings,
   onSaveSettings,
   userRole,
+  currentUserEmail,
+  onBackupCompleted,
 }) => {
   const [formData, setFormData] = useState<CommitteeSettings>(initialSettings);
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Backup Download State
+  const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
+  const [backupSuccessMessage, setBackupSuccessMessage] = useState<string | null>(null);
+  const [backupErrorMessage, setBackupErrorMessage] = useState<string | null>(null);
 
   // Admin Password Change State
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
@@ -99,6 +115,30 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setPasswordError('پاس ورڈ کلاؤڈ پر محفوظ کرنے میں خرابی پیش آئی، انٹرنیٹ کنکشن چیک کر کے دوبارہ کوشش کریں۔');
     } finally {
       setIsSavingPass(false);
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    setIsDownloadingBackup(true);
+    setBackupSuccessMessage(null);
+    setBackupErrorMessage(null);
+
+    try {
+      const userEmail = currentUserEmail || 'admin';
+      const { backupData, filename, stats } = await createFullDatabaseBackup(userEmail);
+      downloadJsonFile(backupData, filename);
+
+      const successText = `پورا بیک اپ کامیابی سے ڈاؤن لوڈ ہو گیا! فائل: ${filename} (مجموعی ممبران: ${stats.membersCount}، اقساط: ${stats.installmentsCount}، ادائیگیاں: ${stats.paymentsCount}، رسیدیں: ${stats.receiptsCount}، ریفنڈز: ${stats.refundsCount}، آڈٹ لاگز: ${stats.auditLogsCount})`;
+      setBackupSuccessMessage(successText);
+
+      if (onBackupCompleted) {
+        onBackupCompleted();
+      }
+    } catch (err) {
+      console.error('Backup download error:', err);
+      setBackupErrorMessage('بیک اپ ڈاؤن لوڈ کرنے میں خرابی پیش آئی۔ براہ کرم انٹرنیٹ کنکشن چیک کر کے دوبارہ کوشش کریں۔');
+    } finally {
+      setIsDownloadingBackup(false);
     }
   };
 
@@ -264,6 +304,77 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Complete Database Backup Section */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center shrink-0">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    سسٹم ڈیٹا بیک اپ (System Data Backup)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    کلاؤڈ ڈیٹابیس کی تمام 7 کلیکشنز (ممبران، اقساط، ادائیگیاں، رسیدیں، ریفنڈز، لاگز، سیٹنگز) کی مکمل JSON فائل ڈاؤن لوڈ کریں۔
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadBackup}
+                disabled={isDownloadingBackup}
+                className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 shrink-0"
+              >
+                {isDownloadingBackup ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                    <span>بیک اپ تیار ہو رہا ہے...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 text-amber-300" />
+                    <span>پورا بیک اپ ڈاؤن لوڈ کریں (Download Full Backup)</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {backupSuccessMessage && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{backupSuccessMessage}</span>
+              </div>
+            )}
+
+            {backupErrorMessage && (
+              <div className="p-3 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-medium flex items-center gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{backupErrorMessage}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-600 pt-1">
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>فارمیٹ: <strong>JSON (Complete)</strong></span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>فائل: <strong>mz-backup-YYYY-MM-DD.json</strong></span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>سیکیورٹی: <strong>پاس ورڈ محفوظ و مستثنیٰ</strong></span>
+              </div>
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>لاگ: <strong>BACKUP_DOWNLOADED</strong></span>
+              </div>
+            </div>
           </div>
 
           {/* Committee Configuration Form */}

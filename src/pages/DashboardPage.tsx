@@ -229,7 +229,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
-              MZ Umrah Committee Performance & Financial Dashboard
+              MZA Umrah Committee Performance & Financial Dashboard
             </h1>
             <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl">
               Real-time monitoring of committee collections, member installment ledgers, cash counter records, and plan recovery performance.
@@ -252,6 +252,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             >
               <PlusCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-300" />
               <span>Add Member</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate('members')}
+              className="px-3 sm:px-4 py-2 sm:py-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-[11px] sm:text-xs rounded-lg sm:rounded-xl transition-all flex items-center gap-1.5 sm:gap-2 border border-white/20 cursor-pointer active:scale-98"
+            >
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300" />
+              <span>All Members</span>
             </button>
           </div>
         </div>
@@ -1011,7 +1019,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                               <a
                                 href={`https://wa.me/92${item.member.mobile.replace(/[^0-9]/g, '').slice(-10)}?text=Assalam-o-Alaikum%20${encodeURIComponent(
                                   item.member.fullName
-                                )},%20your%20MZ%20Umrah%20Committee%20Qist%20#${item.installmentNumber}%20is%20pending.`}
+                                )},%20your%20MZA%20Umrah%20Committee%20Qist%20#${item.installmentNumber}%20is%20pending.`}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="p-1 text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
