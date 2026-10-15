@@ -15,7 +15,9 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Receipt } from '../types';
-import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import mzaLogo from '../assets/images/mza-logo.png';
+import mzaStamp from '../assets/images/mza-stamp.png';
+import { formatPKR, formatDateDisplay, numberToWordsEnglish, numberToWordsUrdu } from '../utils/calculations';
 
 interface ReceiptModalProps {
   isOpen: boolean;
@@ -223,9 +225,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             {/* Header / Branding */}
             <div className="text-center border-b-2 border-emerald-900/80 pb-5">
               <div className="flex items-center justify-center gap-3 my-2">
-                <div className="w-11 h-11 rounded-xl bg-emerald-900 text-white flex items-center justify-center font-bold text-2xl shadow-sm">
-                  🕋
-                </div>
+                <img
+                  src={mzaLogo}
+                  alt="M.Z.A Umrah Committee Logo"
+                  className="h-[88px] w-auto shrink-0 object-contain"
+                  draggable={false}
+                />
                 <div>
                   <h1 className="text-2xl font-black tracking-tight text-emerald-950 font-serif">
                     MZA UMRAH COMMITTEE
@@ -261,8 +266,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 <div>
                   <span className="text-slate-500 block text-[11px]">Payment Mode: </span>
                   <span className="font-bold px-2 py-0.5 bg-slate-100 rounded text-slate-800 inline-block mt-0.5">
-                    {receipt.paymentMethod} (Manual Handover)
+                    {receipt.paymentMethod === 'Cash' ? `${receipt.paymentMethod} (Manual Handover)` : receipt.paymentMethod}
                   </span>
+                  {receipt.paymentMethod !== 'Cash' && receipt.referenceNumber && (
+                    <span className="block text-[10px] font-mono text-slate-500 mt-0.5">Ref: {receipt.referenceNumber}</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -332,6 +340,36 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   </tr>
                 </tbody>
               </table>
+
+              {(() => {
+                const monthly = receipt.planMonths > 0 ? receipt.totalCommitteeAmount / receipt.planMonths : 0;
+                const baqi = monthly > 0 ? Math.max(0, Math.ceil((receipt.totalDueAmount || 0) / monthly)) : 0;
+                const complete = (receipt.totalDueAmount || 0) <= 0;
+                const eng = numberToWordsEnglish(receipt.amount);
+                const urdu = numberToWordsUrdu(receipt.amount);
+                return (
+                  <div className="mt-2 px-3 text-[11px] text-slate-600 space-y-1">
+                    {eng && (
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="italic">Rupees {eng}</p>
+                        <p className="font-urdu italic text-[12px] leading-[2]" dir="rtl">{urdu} روپے صرف</p>
+                      </div>
+                    )}
+                    <div className="flex items-baseline justify-between gap-3 font-semibold text-slate-700">
+                      <p>
+                        {complete
+                          ? `Qist ${receipt.installmentNumber} of ${receipt.planMonths} | Committee mukammal`
+                          : `Qist ${receipt.installmentNumber} of ${receipt.planMonths} | Baqi qisten: ${baqi}`}
+                      </p>
+                      <p className="font-urdu text-[12px] leading-[2]" dir="rtl">
+                        {complete
+                          ? `قسط ${receipt.installmentNumber} از ${receipt.planMonths} | کمیٹی مکمل`
+                          : `قسط ${receipt.installmentNumber} از ${receipt.planMonths} | باقی اقساط: ${baqi}`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Professional Accounting Financial Summary */}
@@ -379,20 +417,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
 
             {/* Signature & Committee Stamp Section */}
-            <div className="pt-8 pb-3 grid grid-cols-2 gap-8 text-center text-xs">
+            <div className="pt-4 pb-3 grid grid-cols-2 gap-8 text-center text-xs">
               <div className="flex flex-col items-center justify-end">
                 <div className="w-40 border-b border-dashed border-slate-400 mb-2"></div>
                 <span className="font-semibold text-slate-700">Member Signature</span>
                 <span className="text-[10px] text-slate-400">Depositor Signature</span>
               </div>
 
-              <div className="flex flex-col items-center justify-end relative">
-                {/* Visual Official Stamp */}
-                <div className="absolute -top-6 w-24 h-24 rounded-full border-2 border-emerald-800/40 text-emerald-800/40 flex flex-col items-center justify-center text-[9px] font-extrabold uppercase rotate-[-12deg] pointer-events-none select-none">
-                  <span>MZA UMRAH</span>
-                  <span className="text-[8px]">OFFICIAL</span>
-                  <span>SEAL</span>
-                </div>
+              <div className="flex flex-col items-center justify-end">
+                {/* Official Committee Stamp */}
+                <img
+                  src={mzaStamp}
+                  alt="M.Z.A Umrah Committee Official Stamp"
+                  className="h-[80px] w-[80px] object-contain -mb-1 -rotate-6 pointer-events-none select-none"
+                  draggable={false}
+                />
                 <div className="w-40 border-b border-dashed border-slate-400 mb-2"></div>
                 <span className="font-bold text-emerald-950">Abdul Shakoor Madni</span>
                 <span className="text-[10px] text-slate-500">Authorized Admin • MZA Umrah Committee</span>
@@ -401,7 +440,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
             {/* Footer Notice */}
             <div className="mt-6 pt-3 border-t border-slate-200 text-center text-[10px] text-slate-400">
-              MZA Umrah Committee Management System • This is a computer generated verifiable receipt • Verification ID: {receipt.id}
+              MZA Umrah Committee Management System • For more information contact: 03435135599
             </div>
           </div>
         </div>
