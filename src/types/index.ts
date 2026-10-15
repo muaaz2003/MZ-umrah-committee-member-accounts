@@ -99,6 +99,7 @@ export interface Receipt {
   totalDueAmount: number;
   registrationFeeStatus: 'Paid' | 'Unpaid';
   notes: string;
+  referenceNumber?: string;
   generatedBy: string;
   verificationStatus: 'Verified' | 'Pending';
   createdAt: string;
