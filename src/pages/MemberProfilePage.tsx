@@ -100,7 +100,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
       }
     }
     loadData();
-  }, [member.id]);
+  }, [member.id, member.paidAmount, member.dueAmount, member.advanceAmount, member.updatedAt]);
 
   const progressPercent = member.totalCommitteeAmount > 0
     ? Math.min(100, Math.round((member.paidAmount / member.totalCommitteeAmount) * 1000) / 10)
@@ -213,22 +213,26 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
               </div>
             </div>
 
-            <div className="px-6 pb-6 pt-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="px-6 pb-6 pt-2 grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                <div className="text-[10px] text-gray-400 uppercase font-bold">Total Amount</div>
-                <div className="text-lg font-bold text-emerald-800">{formatPKR(member.totalCommitteeAmount)}</div>
+                <div className="text-[10px] text-gray-400 uppercase font-bold">Total Committee</div>
+                <div className="text-base sm:text-lg font-bold text-emerald-800">{formatPKR(member.totalCommitteeAmount)}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                <div className="text-[10px] text-gray-400 uppercase font-bold">Monthly Qist</div>
+                <div className="text-base sm:text-lg font-bold text-slate-800">{formatPKR(member.monthlyInstallment)}</div>
               </div>
               <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                 <div className="text-[10px] text-gray-400 uppercase font-bold">Paid Amount</div>
-                <div className="text-lg font-bold text-emerald-600">{formatPKR(member.paidAmount)}</div>
+                <div className="text-base sm:text-lg font-bold text-emerald-600">{formatPKR(member.paidAmount)}</div>
               </div>
               <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                 <div className="text-[10px] text-gray-400 uppercase font-bold">Due Balance</div>
-                <div className="text-lg font-bold text-amber-700">{formatPKR(member.dueAmount)}</div>
+                <div className="text-base sm:text-lg font-bold text-amber-700">{formatPKR(member.dueAmount)}</div>
               </div>
               <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                 <div className="text-[10px] text-gray-400 uppercase font-bold">Installments</div>
-                <div className="text-lg font-bold text-gray-600">
+                <div className="text-base sm:text-lg font-bold text-gray-600">
                   {installments.filter((i) => i.status === 'Paid').length.toString().padStart(2, '0')} / {member.planMonths}
                 </div>
               </div>
@@ -358,7 +362,15 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                     {installments.map((inst) => {
                       const todayStr = getTodayKarachiDate();
                       const liveStatus = computeInstallmentStatus(inst, todayStr);
-                      const receipt = receipts.find((r) => r.installmentNumber === inst.installmentNumber);
+                      // Match receipt ONLY if installment has actual payment received
+                      const receipt = inst.paidAmount > 0
+                        ? receipts.find(
+                            (r) =>
+                              (inst.receiptNumber && inst.receiptNumber.includes(r.receiptNumber)) ||
+                              (r.installmentsCovered && r.installmentsCovered.includes(inst.installmentNumber)) ||
+                              (r.installmentNumber === inst.installmentNumber && (r.installmentsCovered?.length || 0) <= 1)
+                          )
+                        : undefined;
                       const isToday = liveStatus === 'Partial' || (liveStatus !== 'Paid' && inst.dueDate.startsWith(todayStr.slice(0, 7)));
                       return (
                         <tr
@@ -387,26 +399,33 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                           </td>
                           <td className="p-3 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {receipt ? (
-                                <button
-                                  onClick={() => onOpenReceipt(receipt)}
-                                  className="text-emerald-600 font-semibold cursor-pointer underline underline-offset-4 text-xs hover:text-emerald-700"
-                                >
-                                  {receipt.receiptNumber}
-                                </button>
+                              {inst.paidAmount > 0 && (inst.receiptNumber || receipt) ? (
+                                <div className="flex flex-wrap items-center justify-end gap-1">
+                                  {(inst.receiptNumber ? inst.receiptNumber.split(',').map((s) => s.trim()) : [receipt?.receiptNumber]).filter(Boolean).map((rcpNum) => {
+                                    const matchedRec = receipts.find((r) => r.receiptNumber === rcpNum) || receipt;
+                                    return (
+                                      <button
+                                        key={rcpNum}
+                                        type="button"
+                                        onClick={() => matchedRec && onOpenReceipt(matchedRec)}
+                                        className="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-800 border border-emerald-300/80 px-2 py-0.5 rounded font-mono font-bold text-[11px] cursor-pointer shadow-2xs transition-colors"
+                                      >
+                                        {rcpNum}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               ) : (
-                                <button
-                                  disabled
-                                  className="text-[10px] bg-white border border-gray-200 px-2 py-1 rounded text-gray-400 uppercase font-bold cursor-not-allowed"
-                                >
+                                <span className="text-[10px] bg-gray-50 border border-gray-200 px-2 py-1 rounded text-gray-400 uppercase font-semibold">
                                   Pending
-                                </button>
+                                </span>
                               )}
 
                               {userRole !== 'MEMBER' && liveStatus !== 'Paid' && (
                                 <button
+                                  type="button"
                                   onClick={() => onOpenQistWasool(member, inst)}
-                                  className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-emerald-950 rounded text-[10px] font-bold uppercase transition-colors"
+                                  className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-emerald-950 rounded text-[10px] font-bold uppercase transition-colors cursor-pointer"
                                 >
                                   Wasool
                                 </button>

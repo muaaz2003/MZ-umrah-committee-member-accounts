@@ -24,6 +24,8 @@ import {
   seedInitialDemoDataIfEmpty,
   updateMemberRegistrationFeeStatus,
   deleteMemberCompletely,
+  deleteReceiptAndRevertPayment,
+  updateReceiptDetails,
   DEFAULT_SETTINGS,
 } from './services/firebaseService';
 import { calculateFinancialSummary, isInstallmentOverdue } from './utils/calculations';
@@ -119,6 +121,7 @@ export function App() {
   const [isQistModalOpen, setIsQistModalOpen] = useState(false);
   const [qistTargetMember, setQistTargetMember] = useState<Member | null>(null);
   const [qistTargetInstallments, setQistTargetInstallments] = useState<Installment[]>([]);
+  const [qistEditingReceipt, setQistEditingReceipt] = useState<Receipt | null>(null);
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
   const [memberToEdit, setMemberToEdit] = useState<Member | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
@@ -126,6 +129,7 @@ export function App() {
   const [isDeletingMember, setIsDeletingMember] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Receipt | null>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [isReceiptDuplicate, setIsReceiptDuplicate] = useState(false);
 
   // Check URL parameters for ?verify=receipt_id
   useEffect(() => {
@@ -278,6 +282,7 @@ export function App() {
 
   // Open Qist Wasool Modal - Instant response without blocking network requests
   const handleOpenQistWasool = (member?: Member, targetInstallment?: Installment) => {
+    setQistEditingReceipt(null);
     const target = member || null;
     setQistTargetMember(target);
     if (target) {
@@ -290,10 +295,26 @@ export function App() {
     setIsQistModalOpen(true);
   };
 
+  // Open Qist Wasool Modal directly in Edit Mode for an existing receipt
+  const handleOpenEditReceiptInQistModal = (receipt: Receipt) => {
+    const target = members.find((m) => m.id === receipt.memberId) || null;
+    setQistEditingReceipt(receipt);
+    setQistTargetMember(target);
+    if (target) {
+      const insts = installments.filter((i) => i.memberId === target.id);
+      setQistTargetInstallments(insts);
+    } else {
+      setQistTargetInstallments([]);
+    }
+    setIsQistModalOpen(true);
+  };
+
   // On payment recorded successfully - Instant UI response
   const handlePaymentSuccess = (receipt: Receipt) => {
     setIsQistModalOpen(false);
+    setQistEditingReceipt(null);
     setActiveReceipt(receipt);
+    setIsReceiptDuplicate(false);
     setIsReceiptModalOpen(true);
     // Refresh Firestore data silently in background WITHOUT full-page spinner
     loadAllData(false);
@@ -500,6 +521,7 @@ export function App() {
               onOpenQistWasool={(m, inst) => handleOpenQistWasool(m, inst)}
               onOpenReceipt={(rec) => {
                 setActiveReceipt(rec);
+                setIsReceiptDuplicate(true);
                 setIsReceiptModalOpen(true);
               }}
               userRole={currentUser.role}
@@ -525,6 +547,7 @@ export function App() {
               }}
               onOpenReceipt={(rec) => {
                 setActiveReceipt(rec);
+                setIsReceiptDuplicate(true);
                 setIsReceiptModalOpen(true);
               }}
               onNavigate={(page) => setCurrentPage(page)}
@@ -581,6 +604,7 @@ export function App() {
               onOpenQistWasool={() => handleOpenQistWasool()}
               onOpenReceipt={(rec) => {
                 setActiveReceipt(rec);
+                setIsReceiptDuplicate(true);
                 setIsReceiptModalOpen(true);
               }}
             />
@@ -611,11 +635,18 @@ export function App() {
             /* All Issued Receipts */
             <ReceiptsListPage
               receipts={receipts}
-              onOpenReceipt={(rec) => {
+              onOpenReceipt={(rec, isDup) => {
                 setActiveReceipt(rec);
+                setIsReceiptDuplicate(isDup ?? true);
                 setIsReceiptModalOpen(true);
               }}
-              onVerifyReceipt={(receiptId) => setVerifyReceiptId(receiptId)}
+              onDeleteReceipt={async (rec) => {
+                setReceipts((prev) => prev.filter((r) => r.id !== rec.id));
+                setPayments((prev) => prev.filter((p) => p.receiptId !== rec.id && p.receiptNumber !== rec.receiptNumber));
+                await deleteReceiptAndRevertPayment(rec.id, currentUser.email);
+                await loadAllData(false);
+              }}
+              onEditReceipt={handleOpenEditReceiptInQistModal}
             />
           ) : currentPage === 'refunds' ? (
             /* Refund Vouchers */
@@ -670,13 +701,17 @@ export function App() {
       {/* Primary Payment Recording Modal ("QIST WASOOL KAREIN") */}
       <QistWasoolModal
         isOpen={isQistModalOpen}
-        onClose={() => setIsQistModalOpen(false)}
+        onClose={() => {
+          setIsQistModalOpen(false);
+          setQistEditingReceipt(null);
+        }}
         member={qistTargetMember}
         installments={qistTargetInstallments}
         allMembers={members}
         allInstallments={installments}
         onPaymentSuccess={handlePaymentSuccess}
         staffName={currentUser.name}
+        editingReceipt={qistEditingReceipt}
       />
 
       {/* Add / Edit Member Modal */}
@@ -713,6 +748,7 @@ export function App() {
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
         receipt={activeReceipt}
+        isDuplicate={isReceiptDuplicate}
       />
 
       {/* Admin Login Modal (Abdul Shakoor Madni) */}

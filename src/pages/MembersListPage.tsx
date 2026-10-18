@@ -74,9 +74,9 @@ export const MembersListPage: React.FC<MembersListPageProps> = ({
             <span className="w-2.5 h-6 bg-[#064E3B] rounded-xs"></span>
             <span>
               {planFilter === '24'
-                ? '24 Month Committee Members (Rs. 120,000)'
+                ? '24 Month Committee Members'
                 : planFilter === '36'
-                ? '36 Month Committee Members (Rs. 180,000)'
+                ? '36 Month Committee Members'
                 : 'All Committee Members'}
             </span>
           </h1>

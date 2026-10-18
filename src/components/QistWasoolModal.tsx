@@ -12,10 +12,12 @@ import {
   ChevronDown,
   Check,
   Info,
+  Sparkles,
+  Edit2,
 } from 'lucide-react';
 import { Member, Installment, PaymentMethod, Receipt } from '../types';
 import { formatPKR, calculateInstallmentDueDate } from '../utils/calculations';
-import { recordPayment, recordManualPayment } from '../services/firebaseService';
+import { recordPayment, recordManualPayment, deleteReceiptAndRevertPayment } from '../services/firebaseService';
 
 interface QistWasoolModalProps {
   isOpen: boolean;
@@ -26,6 +28,7 @@ interface QistWasoolModalProps {
   allInstallments?: Installment[];
   onPaymentSuccess: (receipt: Receipt) => void;
   staffName: string;
+  editingReceipt?: Receipt | null;
 }
 
 export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
@@ -37,6 +40,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
   allInstallments = [],
   onPaymentSuccess,
   staffName,
+  editingReceipt,
 }) => {
   // Combobox input & menu state (Country-style select & manual write)
   const [nameInput, setNameInput] = useState<string>('');
@@ -77,24 +81,65 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
     }
   }, [isOpen]);
 
-  // Synchronize initial member selection
+  // Synchronize initial member selection and editingReceipt
   useEffect(() => {
     if (isOpen) {
-      if (initialMember) {
+      if (editingReceipt) {
+        // When editing an existing receipt
+        const targetMember = initialMember || allMembers.find((m) => m.id === editingReceipt.memberId) || null;
+        if (targetMember) {
+          setSelectedMember(targetMember);
+          setNameInput(targetMember.fullName);
+          setManualFather(targetMember.fatherName || '');
+          setManualMobile(targetMember.mobile || '');
+        } else {
+          setSelectedMember(null);
+          setNameInput(editingReceipt.memberName || '');
+          setManualFather(editingReceipt.fatherName || '');
+          setManualMobile(editingReceipt.mobile || '');
+          setManualInstallmentDesc(editingReceipt.installmentDescription || 'عمرہ کمیٹی قسط');
+        }
+
+        setAmountReceived(editingReceipt.amount || 5000);
+        setPaymentDate(editingReceipt.paymentDate || new Date().toISOString().split('T')[0]);
+        setPaymentMethod(editingReceipt.paymentMethod || 'Cash');
+        setReferenceNumber(editingReceipt.referenceNumber || editingReceipt.transactionRef || '');
+        setNotes(editingReceipt.notes || '');
+
+        if (editingReceipt.installmentNumber && allInstallments && allInstallments.length > 0) {
+          const matchInst = allInstallments.find(
+            (i) => i.memberId === editingReceipt.memberId && i.installmentNumber === editingReceipt.installmentNumber
+          );
+          if (matchInst) {
+            setSelectedInstallmentId(matchInst.id);
+          }
+        }
+      } else if (initialMember) {
         setSelectedMember(initialMember);
         setNameInput(initialMember.fullName);
         setManualFather(initialMember.fatherName || '');
         setManualMobile(initialMember.mobile || '');
+        const monthly = initialMember.monthlyInstallment || 5000;
+        setAmountReceived(monthly);
+        setPaymentDate(new Date().toISOString().split('T')[0]);
+        setPaymentMethod('Cash');
+        setReferenceNumber('');
+        setNotes('');
       } else {
         setSelectedMember(null);
         setNameInput('');
         setManualFather('');
         setManualMobile('');
+        setAmountReceived(5000);
+        setPaymentDate(new Date().toISOString().split('T')[0]);
+        setPaymentMethod('Cash');
+        setReferenceNumber('');
+        setNotes('');
       }
       setIsMenuOpen(false);
       setErrorMessage('');
     }
-  }, [isOpen, initialMember]);
+  }, [isOpen, initialMember, editingReceipt, allMembers, allInstallments]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -131,7 +176,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
       return initialInstallments;
     }
     // Fallback schedule for registered member
-    const totalMonths = selectedMember.planMonths || 20;
+    const totalMonths = selectedMember.planMonths || 24;
     const monthlyAmt = selectedMember.monthlyInstallment || 5000;
     return Array.from({ length: totalMonths }, (_, idx) => ({
       id: `fallback_${selectedMember.id}_${idx + 1}`,
@@ -148,17 +193,23 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
     }));
   }, [selectedMember, allInstallments, initialMember, initialInstallments]);
 
-  // When active installments change, auto-select the first unpaid or due installment
+  // When active installments change, auto-select the first unpaid or due installment (ONLY when NOT editing receipt)
   useEffect(() => {
+    if (editingReceipt) return;
     if (activeInstallments.length > 0) {
-      const firstUnpaid = activeInstallments.find((i) => i.status !== 'Paid') || activeInstallments[0];
+      const isUnpaid = (i: Installment) => {
+        const rem = i.remainingAmount !== undefined ? i.remainingAmount : (i.amount - (i.paidAmount || 0));
+        return rem > 0 && i.status !== 'Paid';
+      };
+      const firstUnpaid = activeInstallments.find(isUnpaid) || activeInstallments[0];
       if (firstUnpaid) {
         setSelectedInstallmentId(firstUnpaid.id);
-        const rem = firstUnpaid.remainingAmount ?? firstUnpaid.amount;
-        setAmountReceived(rem > 0 ? rem : 5000);
+        const rem = firstUnpaid.remainingAmount !== undefined ? firstUnpaid.remainingAmount : (firstUnpaid.amount - (firstUnpaid.paidAmount || 0));
+        const defaultAmt = rem > 0 ? rem : (selectedMember?.monthlyInstallment || firstUnpaid.amount || 5000);
+        setAmountReceived(defaultAmt);
       }
     }
-  }, [activeInstallments]);
+  }, [activeInstallments, selectedMember, editingReceipt]);
 
   // Input change handler
   const handleNameChange = (val: string) => {
@@ -174,6 +225,8 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
       setSelectedMember(exact);
       setManualFather(exact.fatherName || '');
       setManualMobile(exact.mobile || '');
+      const monthly = exact.monthlyInstallment || 5000;
+      setAmountReceived(monthly);
     } else {
       setSelectedMember(null);
     }
@@ -186,10 +239,14 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
     setManualFather(m.fatherName || '');
     setManualMobile(m.mobile || '');
     setIsMenuOpen(false);
+    const monthly = m.monthlyInstallment || 5000;
+    setAmountReceived(monthly);
   };
 
   const selectedInstallment = activeInstallments.find((i) => i.id === selectedInstallmentId);
-  const requiredAmount = selectedInstallment ? (selectedInstallment.remainingAmount || selectedInstallment.amount) : 5000;
+  const requiredAmount = selectedInstallment
+    ? (selectedInstallment.remainingAmount !== undefined ? selectedInstallment.remainingAmount : (selectedInstallment.amount - (selectedInstallment.paidAmount || 0)))
+    : (selectedMember?.monthlyInstallment || 5000);
 
   const numAmount = Number(amountReceived) || 0;
 
@@ -214,6 +271,19 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
     if (!cleanAmount || isNaN(finalAmount) || finalAmount < 5000) {
       setErrorMessage('رقم کم از کم 5,000 روپے ہونی چاہیے یا اس سے زیادہ۔ 5,000 سے کم رقم قبول نہیں۔ (Amount must be 5,000 PKR or more)');
       return;
+    }
+
+    // If editing an existing receipt, cleanly delete/revert the previous receipt and payment first so it doesn't double count
+    if (editingReceipt) {
+      try {
+        setIsSubmitting(true);
+        await deleteReceiptAndRevertPayment(editingReceipt.id, staffName || 'Staff Counter');
+      } catch (err: any) {
+        console.error('Failed to revert previous receipt before re-issuing:', err);
+        setIsSubmitting(false);
+        setErrorMessage('پرانی رسید منسوخ کرنے کے دوران خرابی پیش آئی۔ دوبارہ کوشش کریں۔');
+        return;
+      }
     }
 
     // Manual Entry (when not a registered member)
@@ -291,14 +361,16 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
         <div className="bg-[#064E3B] px-5 sm:px-7 py-4 text-white flex items-center justify-between border-b border-emerald-800 shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold shadow-xs shrink-0">
-              <HandCoins className="w-5 h-5" />
+              {editingReceipt ? <Edit2 className="w-5 h-5" /> : <HandCoins className="w-5 h-5" />}
             </div>
             <div className="min-w-0">
               <h3 className="font-black text-base sm:text-lg tracking-wide text-white truncate">
-                قسط وصول کریں (Qist Wasool Karein)
+                {editingReceipt ? 'رسید درست کریں (Edit Receipt & Re-issue)' : 'قسط وصول کریں (Qist Wasool Karein)'}
               </h3>
               <p className="text-xs text-amber-300 font-medium mt-0.5 truncate">
-                Record Physical Installment Payment & Issue Official Receipt
+                {editingReceipt
+                  ? `رسید #${editingReceipt.receiptNumber} میں ترمیم — محفوظ کرنے پر نئی رسید جاری ہوگی`
+                  : 'Record Physical Installment Payment & Issue Official Receipt'}
               </p>
             </div>
           </div>
@@ -315,6 +387,27 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
         {/* Form Body - Only the form content inside scrolls, rest is locked */}
         <form noValidate onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden min-h-0">
           <div className="p-5 sm:p-7 space-y-4 sm:space-y-5 overflow-y-auto overscroll-contain flex-1">
+          {editingReceipt && (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="p-1.5 bg-amber-200 text-amber-900 rounded-lg font-bold shrink-0">
+                  <Edit2 className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-bold truncate">
+                    رسید #{editingReceipt.receiptNumber} میں ترمیم ہو رہی ہے
+                  </p>
+                  <p className="text-[11px] text-amber-700 truncate">
+                    معلومات درست کر کے محفوظ کریں۔ محفوظ کرنے پر پرانی رسید منسوخ ہو کر نئی رسید جاری ہوگی۔
+                  </p>
+                </div>
+              </div>
+              <span className="font-mono font-bold bg-white px-2 py-1 rounded border border-amber-200 text-amber-800 text-[11px] shrink-0 ml-2">
+                سابقہ: {formatPKR(editingReceipt.amount)}
+              </span>
+            </div>
+          )}
+
           {errorMessage && (
             <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700 flex items-center gap-2.5 shadow-xs">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -505,11 +598,20 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
                     }}
                     className="w-full px-3.5 py-2.5 text-sm font-semibold border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 bg-white shadow-xs focus:outline-hidden"
                   >
-                    {activeInstallments.map((inst) => (
-                      <option key={inst.id} value={inst.id}>
-                        Qist #{inst.installmentNumber} ({inst.status} - Due: {formatPKR(inst.remainingAmount || inst.amount)})
-                      </option>
-                    ))}
+                    {activeInstallments.map((inst) => {
+                      const isCoveredByEditing = editingReceipt && (
+                        inst.installmentNumber === editingReceipt.installmentNumber ||
+                        (editingReceipt.installmentsCovered && editingReceipt.installmentsCovered.includes(inst.installmentNumber))
+                      );
+                      const rem = inst.remainingAmount !== undefined ? inst.remainingAmount : (inst.amount - (inst.paidAmount || 0));
+                      const statusLabel = isCoveredByEditing ? 'Being Edited' : inst.status;
+                      const dueLabel = isCoveredByEditing ? formatPKR(editingReceipt.amount || inst.amount) : formatPKR(rem || inst.amount);
+                      return (
+                        <option key={inst.id} value={inst.id}>
+                          Qist #{inst.installmentNumber} ({statusLabel} - Due: {dueLabel})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -550,25 +652,36 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
                   placeholder="5000"
                 />
               </div>
-              {/* Quick Selection Chips */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                {[5000, 8000, 10000].map((amt) => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => setAmountReceived(amt)}
-                    className={`flex-1 min-w-[85px] py-1.5 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer text-center border ${
-                      numAmount === amt
-                        ? 'bg-amber-400 text-emerald-950 border-amber-500 shadow-xs font-black'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    Rs. {amt.toLocaleString()}
-                  </button>
-                ))}
+              {/* Quick Selection Chips based on member's monthly installment */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {(() => {
+                  const monthly = selectedMember?.monthlyInstallment || 5000;
+                  const chips = [
+                    { label: `1 قسط (${formatPKR(monthly)})`, val: monthly },
+                    { label: `2 قسطیں (${formatPKR(monthly * 2)})`, val: monthly * 2 },
+                    { label: `3 قسطیں (${formatPKR(monthly * 3)})`, val: monthly * 3 },
+                    { label: `4 قسطیں (${formatPKR(monthly * 4)})`, val: monthly * 4 },
+                    { label: `5 قسطیں (${formatPKR(monthly * 5)})`, val: monthly * 5 },
+                    { label: `6 قسطیں (${formatPKR(monthly * 6)})`, val: monthly * 6 },
+                  ];
+                  return chips.map((chip) => (
+                    <button
+                      key={chip.val}
+                      type="button"
+                      onClick={() => setAmountReceived(chip.val)}
+                      className={`flex-1 min-w-[90px] py-1.5 px-2 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-center border ${
+                        numAmount === chip.val
+                          ? 'bg-amber-400 text-emerald-950 border-amber-500 shadow-xs font-black'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  ));
+                })()}
               </div>
               <p className="text-[11px] text-slate-500 font-medium">
-                کم از کم رقم 5,000 روپے (5,000 کے برابر یا اس سے زائد کوئی بھی رقم درج کی جا سکتی ہے)۔
+                ایک ساتھ 2، 3 یا 4 اقساط جمع کرنے پر خودکار اگلی اقساط ادا ہوں گی اور ایک ہی رسید بنے گی۔
               </p>
             </div>
 
@@ -581,6 +694,47 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Multi-Installment Allocation Live Preview */}
+          {(() => {
+            if (!selectedMember || numAmount <= requiredAmount) return null;
+            const unpaid = activeInstallments.filter((i) => {
+              const rem = i.remainingAmount !== undefined ? i.remainingAmount : (i.amount - (i.paidAmount || 0));
+              return rem > 0 && i.status !== 'Paid';
+            });
+            const coveredList: { num: number; amt: number }[] = [];
+            let tempAmt = numAmount;
+            for (const inst of unpaid) {
+              if (tempAmt <= 0) break;
+              const needed = inst.remainingAmount !== undefined ? inst.remainingAmount : (inst.amount - (inst.paidAmount || 0));
+              const alloc = Math.min(tempAmt, needed);
+              coveredList.push({ num: inst.installmentNumber, amt: alloc });
+              tempAmt -= alloc;
+            }
+
+            if (coveredList.length <= 1 && tempAmt === 0) return null;
+
+            return (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-950 space-y-1.5 animate-in fade-in">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-800">
+                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>متعدد اقساط کی خودکار وصولی (Automatic Multi-Month Allocation)</span>
+                </div>
+                <p className="font-semibold text-emerald-900">
+                  یہ رقم ({formatPKR(numAmount)}) درج ذیل اقساط کے کھاتے میں خودکار درج ہوگی اور کل رقم کی ایک مشترکہ رسید جاری ہوگی:
+                </p>
+                <div className="font-mono text-emerald-900 bg-white/90 p-2.5 rounded-lg border border-emerald-200 font-bold text-xs space-y-1">
+                  <div>
+                    قسط #{coveredList.map((c) => c.num).join('، #')}
+                    {tempAmt > 0 ? ` + اضافی پیشگی رقم: ${formatPKR(tempAmt)}` : ''}
+                  </div>
+                  <div className="text-[10px] text-emerald-700 font-sans font-medium">
+                    (کل {coveredList.length} اقساط ادا ہوں گی • کل رقم: {formatPKR(numAmount)})
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Partial Payment Notice */}
           {isPartial && (
@@ -595,43 +749,6 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
               <p className="text-[11px] text-amber-700">
                 Installment status will be marked as <strong>Partial</strong>.
               </p>
-            </div>
-          )}
-
-          {/* Advance Payment Notice & Allocation Controls */}
-          {isAdvance && (
-            <div className="p-3 bg-blue-50 border border-blue-300 rounded-xl text-xs text-blue-900 space-y-2">
-              <div className="flex items-center gap-1.5 font-bold text-blue-800">
-                <Info className="w-4 h-4" />
-                <span>Advance Payment Detected (+Rs. {excessAmount.toLocaleString()})</span>
-              </div>
-              <p className="text-[11px]">
-                Installment #{selectedInstallment?.installmentNumber} will be marked as Paid (Rs. {requiredAmount.toLocaleString()}). How would you like to allocate the extra Rs. {excessAmount.toLocaleString()}?
-              </p>
-              <div className="space-y-1.5 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="allocation"
-                    value="next"
-                    checked={allocationType === 'next'}
-                    onChange={() => setAllocationType('next')}
-                    className="text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span>Apply to next installment (Qist #{((selectedInstallment?.installmentNumber || 1) + 1)})</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="allocation"
-                    value="advance"
-                    checked={allocationType === 'advance'}
-                    onChange={() => setAllocationType('advance')}
-                    className="text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span>Keep as advance balance (Rs. {excessAmount.toLocaleString()})</span>
-                </label>
-              </div>
             </div>
           )}
 
@@ -667,20 +784,22 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
             </div>
           </div>
 
-          {/* Reference / TID & Notes / Remarks in one responsive row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                حوالہ / سلپ یا ٹرانزیکشن نمبر (Reference / TID)
-              </label>
-              <input
-                type="text"
-                placeholder={paymentMethod === 'Cash' ? 'کاؤنٹر کیش سلپ یا رسید نمبر' : 'TID / Ref # (e.g. EP-9876543)'}
-                value={referenceNumber}
-                onChange={(e) => setReferenceNumber(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 bg-white shadow-xs focus:outline-hidden"
-              />
-            </div>
+          {/* Reference / TID (Only shown when NOT Cash) & Notes / Remarks */}
+          <div className={`grid grid-cols-1 ${paymentMethod !== 'Cash' ? 'sm:grid-cols-2' : ''} gap-3.5`}>
+            {paymentMethod !== 'Cash' && (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  ٹرانزیکشن حوالہ نمبر (Transaction ID / Reference)
+                </label>
+                <input
+                  type="text"
+                  placeholder="TID / Ref # (e.g. EP-9876543, TRX-12345)"
+                  value={referenceNumber}
+                  onChange={(e) => setReferenceNumber(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 bg-white shadow-xs focus:outline-hidden"
+                />
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -718,11 +837,15 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
             className="px-5 sm:px-6 py-2.5 sm:py-3 bg-amber-400 hover:bg-amber-300 active:scale-98 disabled:bg-amber-200 text-emerald-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
           >
             {isSubmitting ? (
-              <span>ریکارڈنگ جاری ہے...</span>
+              <span>
+                {editingReceipt ? 'درستگی اور نئی رسید جاری ہو رہی ہے...' : 'ریکارڈنگ جاری ہے...'}
+              </span>
             ) : (
               <>
                 <ReceiptText className="w-4 h-4" />
-                <span>قسط وصول کریں اور رسید بنائیں</span>
+                <span>
+                  {editingReceipt ? 'رسید درست کریں اور نئی رسید بنائیں' : 'قسط وصول کریں اور رسید بنائیں'}
+                </span>
               </>
             )}
           </button>

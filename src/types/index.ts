@@ -68,9 +68,12 @@ export interface Payment {
   paymentMethod: PaymentMethod;
   paymentDate: string;
   referenceNumber: string;
+  transactionRef?: string;
   notes: string;
   collectedBy: string;
   allocationType: 'current' | 'next' | 'advance';
+  installmentsCovered?: number[];
+  installmentDescription?: string;
   createdAt: string;
 }
 
@@ -86,6 +89,8 @@ export interface Receipt {
   planMonths: number;
   paymentId: string;
   installmentNumber: number;
+  installmentsCovered?: number[];
+  installmentDescription?: string;
   dueDate: string;
   amount: number;
   paymentDate: string;
@@ -100,6 +105,7 @@ export interface Receipt {
   registrationFeeStatus: 'Paid' | 'Unpaid';
   notes: string;
   referenceNumber?: string;
+  transactionRef?: string;
   generatedBy: string;
   verificationStatus: 'Verified' | 'Pending';
   createdAt: string;

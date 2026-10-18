@@ -232,7 +232,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
     setSalutationName(member?.fullName || 'محمد طلحہ خان');
     setSalutationFather(member?.fatherName || 'عبد الرحمٰن');
 
-    const amt = member && member.paidAmount > 0 ? String(member.paidAmount) : '120000';
+    const amt = member && member.paidAmount > 0 ? String(member.paidAmount) : String(member?.totalCommitteeAmount || 120000);
     handleAmountChange(amt);
 
     setQistDescription(`قسط نمبر 1 تا ${member?.planMonths || 24} (مکمل امانت شدہ رقم کی واپسی)`);

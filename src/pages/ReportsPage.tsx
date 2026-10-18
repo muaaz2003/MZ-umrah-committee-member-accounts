@@ -269,7 +269,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div>
                 <h3 className="text-base font-extrabold text-emerald-950">PLAN A: 24 Months Committee</h3>
-                <p className="text-xs text-slate-500">Rs. 5,000 × 24 Months = Rs. 120,000</p>
+                <p className="text-xs text-slate-500">24 اقساط (ماہانہ 5,000 تا 10,000 روپے ممبر کی مرضی)</p>
               </div>
               <span className="px-3 py-1 bg-emerald-100 text-emerald-800 font-black text-xs rounded-full">
                 {plan24Members.length} Members
@@ -297,7 +297,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div>
                 <h3 className="text-base font-extrabold text-emerald-950">PLAN B: 36 Months Committee</h3>
-                <p className="text-xs text-slate-500">Rs. 5,000 × 36 Months = Rs. 180,000</p>
+                <p className="text-xs text-slate-500">36 اقساط (ماہانہ 5,000 تا 10,000 روپے ممبر کی مرضی)</p>
               </div>
               <span className="px-3 py-1 bg-amber-100 text-amber-900 font-black text-xs rounded-full">
                 {plan36Members.length} Members

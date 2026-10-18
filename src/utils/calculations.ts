@@ -463,3 +463,14 @@ export function numberToWordsUrdu(val: number | string): string {
   return parts.join(' ').trim();
 }
 
+export function amountInWordsEnglish(val: number | string): string {
+  const n = typeof val === 'number' ? val : Number(String(val).replace(/[^0-9]/g, '')) || 0;
+  const words = numberToWordsEnglish(n);
+  return words ? `Rupees ${words} Only` : '';
+}
+
+export function amountInWordsUrdu(val: number | string): string {
+  const words = numberToWordsUrdu(val);
+  return words ? `${words} روپے صرف` : '';
+}
+

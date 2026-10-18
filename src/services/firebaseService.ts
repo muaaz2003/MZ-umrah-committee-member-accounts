@@ -23,6 +23,8 @@ import {
   AuditLog,
   PaymentMethod,
   UserRole,
+  InstallmentStatus,
+  MemberStatus,
 } from '../types';
 import {
   calculateFinancialSummary,
@@ -371,11 +373,74 @@ export async function updateMember(
   const path = `members/${memberId}`;
   try {
     const memberRef = doc(db, 'members', memberId);
-    await updateDoc(memberRef, {
+    const existingSnap = await getDoc(memberRef);
+    const existingMember = existingSnap.exists() ? (existingSnap.data() as Member) : null;
+
+    const batch = writeBatch(db);
+    batch.update(memberRef, {
       ...data,
       updatedAt: new Date().toISOString(),
     });
-    await logAudit(userEmail, 'ADMIN', 'UPDATE_MEMBER', 'Member', memberId, `Updated member profile details`);
+
+    // Check if planMonths or monthlyInstallment changed and sync installments
+    const targetPlan = data.planMonths || existingMember?.planMonths;
+    const targetMonthly = data.monthlyInstallment || existingMember?.monthlyInstallment;
+    const firstDueDate = data.firstInstallmentDueDate || existingMember?.firstInstallmentDueDate || '2026-10-10';
+    const memberNum = data.memberNumber || existingMember?.memberNumber || 'MZA-#001';
+
+    if (existingMember && targetPlan && targetMonthly) {
+      const instSnap = await getDocs(
+        query(collection(db, 'installments'), where('memberId', '==', memberId))
+      );
+      const currentInsts = instSnap.docs.map((d) => d.data() as Installment);
+      const currentCount = currentInsts.length;
+
+      // Update existing installments' base amount if monthly changed
+      currentInsts.forEach((inst) => {
+        if (inst.amount !== targetMonthly) {
+          const instDocRef = doc(db, 'installments', inst.id);
+          const newRemaining = Math.max(0, targetMonthly - (inst.paidAmount || 0));
+          const newStatus = newRemaining === 0 ? 'Paid' : (inst.paidAmount > 0 ? 'Partial' : 'Upcoming');
+          batch.update(instDocRef, {
+            amount: targetMonthly,
+            remainingAmount: newRemaining,
+            status: newStatus,
+          });
+        }
+      });
+
+      // If plan changed from 24 to 36, create missing installments 25 to 36
+      if (targetPlan === 36 && currentCount < 36) {
+        for (let num = currentCount + 1; num <= 36; num++) {
+          const dueDate = calculateInstallmentDueDate(firstDueDate, num, 10);
+          const instId = `inst_${memberId}_${String(num).padStart(2, '0')}`;
+          const newInst: Installment = {
+            id: instId,
+            memberId,
+            memberNumber: memberNum,
+            installmentNumber: num,
+            dueDate,
+            amount: targetMonthly,
+            paidAmount: 0,
+            remainingAmount: targetMonthly,
+            status: 'Upcoming',
+            createdAt: new Date().toISOString(),
+          };
+          batch.set(doc(db, 'installments', instId), newInst);
+        }
+      } else if (targetPlan === 24 && currentCount > 24) {
+        // If reduced to 24, delete unpaid installments > 24
+        instSnap.docs.forEach((d) => {
+          const instData = d.data() as Installment;
+          if (instData.installmentNumber > 24 && (instData.paidAmount || 0) === 0) {
+            batch.delete(d.ref);
+          }
+        });
+      }
+    }
+
+    await batch.commit();
+    await logAudit(userEmail, 'ADMIN', 'UPDATE_MEMBER', 'Member', memberId, `Updated member profile details and synced installments`);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -536,7 +601,7 @@ export async function getNextReceiptNumber(): Promise<string> {
 
 export interface RecordPaymentPayload {
   memberId: string;
-  installmentId: string;
+  installmentId?: string;
   amountReceived: number;
   paymentMethod: PaymentMethod;
   paymentDate: string; // YYYY-MM-DD
@@ -555,117 +620,78 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
   const member = await getMemberById(payload.memberId);
   if (!member) throw new Error('Member not found');
 
-  const installments = await getInstallmentsForMember(payload.memberId);
-  const targetInstallment = installments.find((i) => i.id === payload.installmentId);
-  if (!targetInstallment) throw new Error('Installment not found');
+  const allInstallments = await getInstallmentsForMember(payload.memberId);
+  const sortedInstallments = allInstallments.sort((a, b) => a.installmentNumber - b.installmentNumber);
 
+  // Identify target starting installment
+  let startIdx = 0;
+  if (payload.installmentId) {
+    const foundIdx = sortedInstallments.findIndex((i) => i.id === payload.installmentId);
+    if (foundIdx !== -1) startIdx = foundIdx;
+  }
+  // Helper to reliably detect fully paid installment
+  const isFullyPaid = (inst: Installment) => {
+    const rem = inst.remainingAmount !== undefined ? inst.remainingAmount : (inst.amount - (inst.paidAmount || 0));
+    return rem <= 0 || inst.status === 'Paid';
+  };
+
+  // If selected installment is already paid, automatically find earliest unpaid
+  if (sortedInstallments[startIdx] && isFullyPaid(sortedInstallments[startIdx])) {
+    const firstUnpaidIdx = sortedInstallments.findIndex((i) => !isFullyPaid(i));
+    if (firstUnpaidIdx !== -1) startIdx = firstUnpaidIdx;
+  }
+
+  const primaryInstallment = sortedInstallments[startIdx] || sortedInstallments[0];
   const receiptNumber = await getNextReceiptNumber();
   const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const receiptId = `rcp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
 
-  // Accounting logic:
   const previousPaidAmount = member.paidAmount || 0;
   const currentPayment = payload.amountReceived;
-  const installmentRemainingBefore = targetInstallment.remainingAmount ?? (targetInstallment.amount - targetInstallment.paidAmount);
-
-  let newPaidForInstallment = targetInstallment.paidAmount + currentPayment;
-  let newRemainingForInstallment = 0;
-  let newStatus: Installment['status'] = 'Paid';
-  let excessAmount = 0;
-
-  if (currentPayment < installmentRemainingBefore) {
-    // Partial payment
-    newRemainingForInstallment = installmentRemainingBefore - currentPayment;
-    newPaidForInstallment = targetInstallment.paidAmount + currentPayment;
-    newStatus = 'Partial';
-  } else if (currentPayment === installmentRemainingBefore) {
-    // Exact payment
-    newRemainingForInstallment = 0;
-    newPaidForInstallment = targetInstallment.amount;
-    newStatus = 'Paid';
-  } else {
-    // Overpayment / advance
-    excessAmount = currentPayment - installmentRemainingBefore;
-    newRemainingForInstallment = 0;
-    newPaidForInstallment = targetInstallment.amount;
-    newStatus = 'Paid';
-  }
 
   const batch = writeBatch(db);
 
-  // 1. Create Payment Record
-  const paymentRecord: Payment = {
-    id: paymentId,
-    memberId: member.id,
-    memberNumber: member.memberNumber,
-    memberName: member.fullName,
-    installmentId: targetInstallment.id,
-    installmentNumber: targetInstallment.installmentNumber,
-    receiptId,
-    receiptNumber,
-    amountReceived: currentPayment,
-    paymentMethod: payload.paymentMethod,
-    paymentDate: payload.paymentDate,
-    referenceNumber: payload.referenceNumber || '',
-    notes: payload.notes || '',
-    collectedBy: payload.collectedBy,
-    allocationType: payload.allocationType || 'current',
-    createdAt: now,
-  };
-  batch.set(doc(db, 'payments', paymentId), paymentRecord);
+  // Sequential multi-installment allocation
+  let remainingToAllocate = currentPayment;
+  const installmentsCovered: number[] = [];
+  const updatedInstallments: Installment[] = [];
 
-  // 2. Update Target Installment
-  const updatedTargetInstallment: Installment = {
-    ...targetInstallment,
-    paidAmount: newPaidForInstallment,
-    remainingAmount: newRemainingForInstallment,
-    status: newStatus,
-    paidDate: payload.paymentDate,
-    paymentMethod: payload.paymentMethod,
-    receiptNumber,
-    receiptId,
-    notes: payload.notes || targetInstallment.notes || '',
-  };
-  batch.set(doc(db, 'installments', targetInstallment.id), updatedTargetInstallment);
+  // Allocate starting from startIdx onward
+  for (let i = startIdx; i < sortedInstallments.length; i++) {
+    if (remainingToAllocate <= 0) break;
+    const inst = sortedInstallments[i];
+    const instNeeded = inst.remainingAmount ?? (inst.amount - inst.paidAmount);
+    if (instNeeded <= 0) continue;
 
-  // 3. Handle Excess Amount (Advance vs Next Installment)
-  let updatedAdvance = member.advanceAmount || 0;
-  if (excessAmount > 0) {
-    if (payload.allocationType === 'next') {
-      // Find the next unpaid installment
-      const nextInst = installments.find(
-        (i) => i.installmentNumber === targetInstallment.installmentNumber + 1
-      );
-      if (nextInst) {
-        const nextRemaining = nextInst.remainingAmount;
-        const applyToNext = Math.min(excessAmount, nextRemaining);
-        const nextRem = nextRemaining - applyToNext;
-        const nextStat = nextRem === 0 ? 'Paid' : 'Partial';
+    const allocated = Math.min(remainingToAllocate, instNeeded);
+    const newPaid = inst.paidAmount + allocated;
+    const newRemaining = Math.max(0, inst.amount - newPaid);
+    const newStatus: Installment['status'] = newRemaining === 0 ? 'Paid' : 'Partial';
 
-        batch.update(doc(db, 'installments', nextInst.id), {
-          paidAmount: nextInst.paidAmount + applyToNext,
-          remainingAmount: nextRem,
-          status: nextStat,
-          paidDate: payload.paymentDate,
-          paymentMethod: payload.paymentMethod,
-          receiptNumber,
-        });
+    const updatedInst: Installment = {
+      ...inst,
+      paidAmount: newPaid,
+      remainingAmount: newRemaining,
+      status: newStatus,
+      paidDate: payload.paymentDate,
+      paymentMethod: payload.paymentMethod,
+      receiptNumber: inst.receiptNumber ? `${inst.receiptNumber}, ${receiptNumber}` : receiptNumber,
+      receiptId,
+      notes: payload.notes || inst.notes || '',
+    };
 
-        const leftover = excessAmount - applyToNext;
-        if (leftover > 0) {
-          updatedAdvance += leftover;
-        }
-      } else {
-        updatedAdvance += excessAmount;
-      }
-    } else {
-      // Keep as advance
-      updatedAdvance += excessAmount;
-    }
+    batch.set(doc(db, 'installments', inst.id), updatedInst);
+    updatedInstallments.push(updatedInst);
+    installmentsCovered.push(inst.installmentNumber);
+
+    remainingToAllocate -= allocated;
   }
 
-  // 4. Update Member's Financial Totals
+  // Any leftover beyond all remaining installments in plan is added to advanceAmount
+  const updatedAdvance = (member.advanceAmount || 0) + Math.max(0, remainingToAllocate);
+
+  // Calculate updated financial summary for member
   const totalPaidAfter = previousPaidAmount + currentPayment;
   const calc = calculateFinancialSummary(member.totalCommitteeAmount, totalPaidAfter, updatedAdvance);
 
@@ -684,7 +710,37 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
   };
   batch.set(doc(db, 'members', member.id), updatedMember);
 
-  // 5. Create Receipt Record
+  const installmentDesc = installmentsCovered.length > 1
+    ? `Qist #${installmentsCovered.join(', #')}`
+    : installmentsCovered.length === 1
+    ? `Qist #${installmentsCovered[0]}`
+    : `Qist #${primaryInstallment.installmentNumber}`;
+
+  // 1. Create Payment Record
+  const paymentRecord: Payment = {
+    id: paymentId,
+    memberId: member.id,
+    memberNumber: member.memberNumber,
+    memberName: member.fullName,
+    installmentId: primaryInstallment.id,
+    installmentNumber: primaryInstallment.installmentNumber,
+    installmentsCovered,
+    installmentDescription: installmentDesc,
+    receiptId,
+    receiptNumber,
+    amountReceived: currentPayment,
+    paymentMethod: payload.paymentMethod,
+    paymentDate: payload.paymentDate,
+    referenceNumber: payload.referenceNumber || '',
+    transactionRef: payload.referenceNumber || '',
+    notes: payload.notes || '',
+    collectedBy: payload.collectedBy,
+    allocationType: payload.allocationType || 'current',
+    createdAt: now,
+  };
+  batch.set(doc(db, 'payments', paymentId), paymentRecord);
+
+  // 2. Create Single Official Receipt for total amount
   const receiptRecord: Receipt = {
     id: receiptId,
     receiptNumber,
@@ -696,8 +752,10 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
     address: member.address,
     planMonths: member.planMonths,
     paymentId,
-    installmentNumber: targetInstallment.installmentNumber,
-    dueDate: targetInstallment.dueDate,
+    installmentNumber: primaryInstallment.installmentNumber,
+    installmentsCovered,
+    installmentDescription: installmentDesc,
+    dueDate: primaryInstallment.dueDate,
     amount: currentPayment,
     paymentDate: payload.paymentDate,
     paymentMethod: payload.paymentMethod,
@@ -711,6 +769,7 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
     registrationFeeStatus: member.registrationFeeStatus,
     notes: payload.notes || '',
     referenceNumber: payload.referenceNumber || '',
+    transactionRef: payload.referenceNumber || '',
     generatedBy: payload.collectedBy,
     verificationStatus: 'Verified',
     createdAt: now,
@@ -720,24 +779,351 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
   try {
     await batch.commit();
 
+    // Cleanly harmonize all installments, receipt descriptions, and financials
+    await recalculateMemberInstallmentsAndFinancials(payload.memberId);
+
+    const freshReceiptSnap = await getDoc(doc(db, 'receipts', receiptId));
+    const finalReceipt = freshReceiptSnap.exists() ? (freshReceiptSnap.data() as Receipt) : receiptRecord;
+    const freshMemberSnap = await getDoc(doc(db, 'members', member.id));
+    const finalMember = freshMemberSnap.exists() ? (freshMemberSnap.data() as Member) : updatedMember;
+
     await logAudit(
       payload.collectedBy,
       'STAFF',
       'RECORD_PAYMENT',
       'Payment',
       paymentId,
-      `Collected ${currentPayment} PKR from ${member.fullName} (${member.memberNumber}) for Installment #${targetInstallment.installmentNumber} via ${payload.paymentMethod}. Generated receipt ${receiptNumber}.`
+      `Collected ${currentPayment} PKR from ${member.fullName} (${member.memberNumber}) covering ${finalReceipt.installmentDescription || installmentDesc} via ${payload.paymentMethod}. Generated receipt ${receiptNumber}.`
     );
 
     return {
       payment: paymentRecord,
-      receipt: receiptRecord,
-      installment: updatedTargetInstallment,
-      member: updatedMember,
+      receipt: finalReceipt,
+      installment: updatedInstallments[0] || primaryInstallment,
+      member: finalMember,
     };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'payments+receipts+atomic');
   }
+}
+
+/**
+ * Cleanly recalculates and synchronizes all installments and member financials
+ * strictly from all active receipts for that member in Firestore.
+ * Eliminates any orphaned installment balances, phantom receipt numbers, or ledger mismatches.
+ */
+export async function recalculateMemberInstallmentsAndFinancials(memberId: string): Promise<void> {
+  const memberRef = doc(db, 'members', memberId);
+  const memberSnap = await getDoc(memberRef);
+  if (!memberSnap.exists()) return;
+  const member = memberSnap.data() as Member;
+
+  const [installments, receipts] = await Promise.all([
+    getInstallmentsForMember(memberId),
+    getMemberReceipts(memberId),
+  ]);
+
+  // Sort installments strictly by installmentNumber ascending
+  const sortedInsts = [...installments].sort((a, b) => a.installmentNumber - b.installmentNumber);
+
+  // Sort receipts by issuance sequence (createdAt ascending, then receiptNumber)
+  const sortedReceipts = [...receipts].sort((a, b) => {
+    const cDiff = (a.createdAt || '').localeCompare(b.createdAt || '');
+    if (cDiff !== 0) return cDiff;
+    return (a.receiptNumber || '').localeCompare(b.receiptNumber || '');
+  });
+
+  const todayStr = getTodayKarachiDate();
+
+  // Reset all installments to pristine unpaid state
+  const instMap = new Map<number, Installment>();
+  for (const inst of sortedInsts) {
+    const due = inst.dueDate || '';
+    let initialStatus: InstallmentStatus = 'Upcoming';
+    if (due < todayStr) initialStatus = 'Overdue';
+    else if (due === todayStr) initialStatus = 'Due';
+
+    instMap.set(inst.installmentNumber, {
+      ...inst,
+      amount: inst.amount || member.monthlyInstallment || 5000,
+      paidAmount: 0,
+      remainingAmount: inst.amount || member.monthlyInstallment || 5000,
+      status: initialStatus,
+      paidDate: undefined,
+      paymentMethod: undefined,
+      receiptNumber: undefined,
+      receiptId: undefined,
+      notes: undefined,
+    });
+  }
+
+  // Sequential allocation with contribution tracking
+  interface Contribution {
+    receipt: Receipt;
+    allocatedAmount: number;
+    isTargetInstallment: boolean;
+  }
+
+  const instContributions = new Map<number, Contribution[]>();
+
+  // Allocate each receipt sequentially
+  for (const r of sortedReceipts) {
+    let remToAllocate = Number(r.amount) || 0;
+    const targetInstNum = r.installmentNumber || 1;
+
+    // Find earliest installment that has remainingAmount > 0
+    for (const inst of sortedInsts) {
+      if (remToAllocate <= 0) break;
+      const currentInst = instMap.get(inst.installmentNumber)!;
+      const needed = currentInst.remainingAmount;
+      if (needed <= 0) continue;
+
+      const allocated = Math.min(remToAllocate, needed);
+      currentInst.paidAmount += allocated;
+      currentInst.remainingAmount = Math.max(0, currentInst.amount - currentInst.paidAmount);
+      currentInst.status = currentInst.remainingAmount === 0 ? 'Paid' : 'Partial';
+      currentInst.paidDate = r.paymentDate;
+      currentInst.paymentMethod = r.paymentMethod;
+
+      if (!instContributions.has(inst.installmentNumber)) {
+        instContributions.set(inst.installmentNumber, []);
+      }
+      instContributions.get(inst.installmentNumber)!.push({
+        receipt: r,
+        allocatedAmount: allocated,
+        isTargetInstallment: targetInstNum === inst.installmentNumber,
+      });
+
+      remToAllocate -= allocated;
+    }
+  }
+
+  // Determine receiptNumber(s) for each installment based on Scenario 1 vs Scenario 2:
+  // Scenario 1: Overpayment spillover does not linger on the subsequent installment if that installment has its own targeted receipt.
+  // Scenario 2: Multiple payments targeted at the same installment (partial + remaining) will show BOTH receipts.
+  for (const inst of sortedInsts) {
+    const currentInst = instMap.get(inst.installmentNumber)!;
+    const contribs = instContributions.get(inst.installmentNumber) || [];
+
+    if (contribs.length === 0 || currentInst.paidAmount === 0) {
+      currentInst.receiptNumber = undefined;
+      currentInst.receiptId = undefined;
+      continue;
+    }
+
+    if (contribs.length === 1) {
+      currentInst.receiptNumber = contribs[0].receipt.receiptNumber;
+      currentInst.receiptId = contribs[0].receipt.id;
+      continue;
+    }
+
+    // Multiple receipts contributed to this installment
+    const targetContribs = contribs.filter((c) => c.isTargetInstallment);
+
+    if (targetContribs.length > 0) {
+      // Scenario 1: Only keep the receipt(s) specifically targeted at this installment
+      // Scenario 2: If multiple receipts targeted this installment, display all of them comma-separated
+      currentInst.receiptNumber = targetContribs.map((c) => c.receipt.receiptNumber).join(', ');
+      currentInst.receiptId = targetContribs[targetContribs.length - 1].receipt.id;
+    } else {
+      // No receipt targeted this installment directly (e.g. earlier large advance paid it)
+      currentInst.receiptNumber = contribs.map((c) => c.receipt.receiptNumber).join(', ');
+      currentInst.receiptId = contribs[contribs.length - 1].receipt.id;
+    }
+  }
+
+  // Total amount paid by this member across all active receipts
+  const totalPaid = sortedReceipts.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const totalCommittee = member.totalCommitteeAmount || (member.planMonths * (member.monthlyInstallment || 5000));
+  const totalDue = Math.max(0, totalCommittee - totalPaid);
+  const advanceAmount = Math.max(0, totalPaid - totalCommittee);
+  const newMemberStatus: MemberStatus = totalPaid >= totalCommittee ? 'Completed' : 'Active';
+
+  // Determine covered installments and description for each receipt
+  const receiptBatchUpdates: { receiptRef: any; covered: number[]; primaryInstNum: number; desc: string }[] = [];
+
+  for (const r of sortedReceipts) {
+    const coveredNums: number[] = [];
+    for (const inst of sortedInsts) {
+      const currentInst = instMap.get(inst.installmentNumber)!;
+      if (currentInst.receiptNumber && currentInst.receiptNumber.includes(r.receiptNumber)) {
+        coveredNums.push(inst.installmentNumber);
+      }
+    }
+    // Fallback: If this receipt was an overpayment whose spillover got completed by a subsequent receipt,
+    // default coveredNums to the receipt's own original target installment
+    if (coveredNums.length === 0) {
+      coveredNums.push(r.installmentNumber || 1);
+    }
+
+    const instDesc = coveredNums.length > 1
+      ? `Qist #${coveredNums.join(', #')}`
+      : `Qist #${coveredNums[0]}`;
+
+    receiptBatchUpdates.push({
+      receiptRef: doc(db, 'receipts', r.id),
+      covered: coveredNums,
+      primaryInstNum: coveredNums[0],
+      desc: instDesc,
+    });
+  }
+
+  // Perform Firestore batch commit
+  const batch = writeBatch(db);
+
+  // 1. Update all installments
+  for (const inst of sortedInsts) {
+    const updated = instMap.get(inst.installmentNumber)!;
+    batch.update(doc(db, 'installments', inst.id), {
+      amount: updated.amount,
+      paidAmount: updated.paidAmount,
+      remainingAmount: updated.remainingAmount,
+      status: updated.status,
+      paidDate: updated.paidDate || null,
+      paymentMethod: updated.paymentMethod || null,
+      receiptNumber: updated.receiptNumber || null,
+      receiptId: updated.receiptId || null,
+    });
+  }
+
+  // 2. Update member financial summary
+  batch.update(memberRef, {
+    paidAmount: totalPaid,
+    dueAmount: totalDue,
+    advanceAmount: advanceAmount,
+    status: newMemberStatus,
+    updatedAt: new Date().toISOString(),
+  });
+
+  // 3. Update receipts with correct covered installments & descriptions
+  for (const ru of receiptBatchUpdates) {
+    batch.update(ru.receiptRef, {
+      installmentsCovered: ru.covered,
+      installmentNumber: ru.primaryInstNum,
+      installmentDescription: ru.desc,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  await batch.commit();
+}
+
+export async function deleteReceiptAndRevertPayment(
+  receiptId: string,
+  userEmail: string = 'admin'
+): Promise<{ success: boolean; message: string }> {
+  const receiptRef = doc(db, 'receipts', receiptId);
+  const receiptSnap = await getDoc(receiptRef);
+  if (!receiptSnap.exists()) {
+    throw new Error('Receipt not found');
+  }
+  const receipt = receiptSnap.data() as Receipt;
+
+  const batch = writeBatch(db);
+
+  // Delete associated payment document by ID
+  if (receipt.paymentId) {
+    batch.delete(doc(db, 'payments', receipt.paymentId));
+  }
+  // Also delete any payment records tied to this receipt number to ensure no orphaned transaction records
+  const payQuery = query(collection(db, 'payments'), where('receiptNumber', '==', receipt.receiptNumber));
+  const payDocs = await getDocs(payQuery);
+  payDocs.forEach((d) => batch.delete(d.ref));
+
+  // Delete the receipt document
+  batch.delete(receiptRef);
+
+  await batch.commit();
+
+  // Cleanly recalculate member installments and financials from remaining receipts
+  if (receipt.memberId && !receipt.memberId.startsWith('manual_')) {
+    await recalculateMemberInstallmentsAndFinancials(receipt.memberId);
+  }
+
+  await logAudit(
+    userEmail,
+    'SUPER ADMIN',
+    'DELETE_RECEIPT',
+    'Receipt',
+    receiptId,
+    `Deleted receipt ${receipt.receiptNumber} (${receipt.amount} PKR) and completely reversed payment transaction for ${receipt.memberName}.`
+  );
+
+  return {
+    success: true,
+    message: `رسید #${receipt.receiptNumber} اور متعلقہ ادائیگی کامیابی سے حذف کر دی گئی، اور اکاؤنٹ لیجر بحال کر دیا گیا۔`,
+  };
+}
+
+export async function updateReceiptDetails(
+  receiptId: string,
+  updates: {
+    amount?: number;
+    paymentDate?: string;
+    paymentMethod?: PaymentMethod;
+    referenceNumber?: string;
+    notes?: string;
+  },
+  userEmail: string = 'admin'
+): Promise<void> {
+  const receiptRef = doc(db, 'receipts', receiptId);
+  const snap = await getDoc(receiptRef);
+  if (!snap.exists()) throw new Error('Receipt not found');
+  const receipt = snap.data() as Receipt;
+
+  const oldAmount = receipt.amount;
+  const newAmount = updates.amount !== undefined ? Number(updates.amount) : oldAmount;
+  const amountChanged = updates.amount !== undefined && newAmount !== oldAmount;
+
+  const receiptUpdates: any = {
+    ...updates,
+    amount: newAmount,
+    currentPayment: newAmount,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const batch = writeBatch(db);
+  batch.update(receiptRef, receiptUpdates);
+
+  if (receipt.paymentId) {
+    const payRef = doc(db, 'payments', receipt.paymentId);
+    batch.update(payRef, {
+      ...updates,
+      amountReceived: newAmount,
+      amount: newAmount,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  // Also update any matching payments by receiptNumber
+  const payQuery = query(collection(db, 'payments'), where('receiptNumber', '==', receipt.receiptNumber));
+  const payDocs = await getDocs(payQuery);
+  payDocs.forEach((d) => {
+    if (d.id !== receipt.paymentId) {
+      batch.update(d.ref, {
+        ...updates,
+        amountReceived: newAmount,
+        amount: newAmount,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
+
+  await batch.commit();
+
+  // If amount changed or member is registered, recalculate member installments & ledger
+  if (receipt.memberId && !receipt.memberId.startsWith('manual_')) {
+    await recalculateMemberInstallmentsAndFinancials(receipt.memberId);
+  }
+
+  await logAudit(
+    userEmail,
+    'ADMIN',
+    'UPDATE_RECEIPT',
+    'Receipt',
+    receiptId,
+    `Updated receipt #${receipt.receiptNumber} details${amountChanged ? ` (Amount updated from ${oldAmount} to ${newAmount} PKR)` : ''}.`
+  );
 }
 
 export interface RecordManualPaymentPayload {

@@ -23,12 +23,14 @@ interface ReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   receipt: Receipt | null;
+  isDuplicate?: boolean;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
   receipt,
+  isDuplicate = false,
 }) => {
   const [copySuccess, setCopySuccess] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -241,8 +243,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 </div>
               </div>
 
-              <div className="inline-block bg-emerald-900 text-white font-bold text-xs px-4 py-1 rounded-full uppercase tracking-wider mt-1">
-                Receipt For Umrah Committee Installment
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <div className="inline-block bg-emerald-900 text-white font-bold text-xs px-4 py-1 rounded-full uppercase tracking-wider">
+                  Receipt For Umrah Committee Installment
+                </div>
+                {isDuplicate && (
+                  <span className="inline-block bg-slate-200 text-slate-700 border border-slate-300 font-bold text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                    DUPLICATE COPY / ڈپلیکیٹ کاپی
+                  </span>
+                )}
               </div>
             </div>
 
@@ -329,7 +338,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                       Umrah Committee Monthly Installment
                     </td>
                     <td className="py-3 px-3 font-mono font-bold text-emerald-800">
-                      Qist #{receipt.installmentNumber}
+                      {receipt.installmentDescription ||
+                        (receipt.installmentsCovered && receipt.installmentsCovered.length > 1
+                          ? `Qist #${receipt.installmentsCovered.join(', #')}`
+                          : `Qist #${receipt.installmentNumber}`)}
                     </td>
                     <td className="py-3 px-3 font-medium text-slate-600">
                       {formatDateDisplay(receipt.dueDate)}
@@ -347,6 +359,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 const complete = (receipt.totalDueAmount || 0) <= 0;
                 const eng = numberToWordsEnglish(receipt.amount);
                 const urdu = numberToWordsUrdu(receipt.amount);
+                const instTextEn = receipt.installmentDescription || (receipt.installmentsCovered && receipt.installmentsCovered.length > 1
+                  ? `Qist #${receipt.installmentsCovered.join(', #')}`
+                  : `Qist #${receipt.installmentNumber}`);
+                const instNumsUrdu = receipt.installmentsCovered && receipt.installmentsCovered.length > 1
+                  ? receipt.installmentsCovered.join(', #')
+                  : String(receipt.installmentNumber);
+
                 return (
                   <div className="mt-2 px-3 text-[11px] text-slate-600 space-y-1">
                     {eng && (
@@ -358,13 +377,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     <div className="flex items-baseline justify-between gap-3 font-semibold text-slate-700">
                       <p>
                         {complete
-                          ? `Qist ${receipt.installmentNumber} of ${receipt.planMonths} | Committee mukammal`
-                          : `Qist ${receipt.installmentNumber} of ${receipt.planMonths} | Baqi qisten: ${baqi}`}
+                          ? `${instTextEn} of ${receipt.planMonths} | Committee mukammal`
+                          : `${instTextEn} of ${receipt.planMonths} | Baqi qisten: ${baqi}`}
                       </p>
                       <p className="font-urdu text-[12px] leading-[2]" dir="rtl">
                         {complete
-                          ? `قسط ${receipt.installmentNumber} از ${receipt.planMonths} | کمیٹی مکمل`
-                          : `قسط ${receipt.installmentNumber} از ${receipt.planMonths} | باقی اقساط: ${baqi}`}
+                          ? `قسط #${instNumsUrdu} از ${receipt.planMonths} | کمیٹی مکمل`
+                          : `قسط #${instNumsUrdu} از ${receipt.planMonths} | باقی اقساط: ${baqi}`}
                       </p>
                     </div>
                   </div>
