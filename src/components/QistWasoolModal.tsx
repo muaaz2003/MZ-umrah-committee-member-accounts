@@ -18,6 +18,7 @@ import {
 import { Member, Installment, PaymentMethod, Receipt } from '../types';
 import { formatPKR, calculateInstallmentDueDate } from '../utils/calculations';
 import { recordPayment, recordManualPayment, deleteReceiptAndRevertPayment } from '../services/firebaseService';
+import mzaLogo from '../assets/images/mza-logo.png';
 
 interface QistWasoolModalProps {
   isOpen: boolean;
@@ -268,8 +269,8 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
 
     const cleanAmount = String(amountReceived).replace(/[^0-9]/g, '');
     const finalAmount = Number(cleanAmount);
-    if (!cleanAmount || isNaN(finalAmount) || finalAmount < 5000) {
-      setErrorMessage('رقم کم از کم 5,000 روپے ہونی چاہیے یا اس سے زیادہ۔ 5,000 سے کم رقم قبول نہیں۔ (Amount must be 5,000 PKR or more)');
+    if (!cleanAmount || isNaN(finalAmount) || finalAmount <= 0) {
+      setErrorMessage('برائے مہربانی وصول شدہ رقم درج کریں۔ رقم صفر (0) سے زیادہ ہونی چاہیے۔ (Please enter an amount greater than 0)');
       return;
     }
 
@@ -358,11 +359,14 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
     >
       <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-200 max-w-lg w-full max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
         {/* Modal Header - Fixed at Top */}
-        <div className="bg-[#064E3B] px-5 sm:px-7 py-4 text-white flex items-center justify-between border-b border-emerald-800 shrink-0 shadow-xs">
+        <div className="bg-[#064E3B] px-4 sm:px-6 py-3.5 text-white flex items-center justify-between border-b border-emerald-800 shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-400 text-emerald-950 flex items-center justify-center font-bold shadow-xs shrink-0">
-              {editingReceipt ? <Edit2 className="w-5 h-5" /> : <HandCoins className="w-5 h-5" />}
-            </div>
+            <img
+              src={mzaLogo}
+              alt="MZA Umrah Committee Logo"
+              className="h-10 w-auto object-contain bg-white/10 p-1 rounded-xl shrink-0 border border-emerald-700/60 shadow-xs"
+              draggable={false}
+            />
             <div className="min-w-0">
               <h3 className="font-black text-base sm:text-lg tracking-wide text-white truncate">
                 {editingReceipt ? 'رسید درست کریں (Edit Receipt & Re-issue)' : 'قسط وصول کریں (Qist Wasool Karein)'}

@@ -537,6 +537,7 @@ export function App() {
               refunds={refunds}
               summary={summary}
               installments={installments}
+              settings={settings}
               onOpenQistWasool={handleOpenQistWasool}
               onOpenAddMember={handleOpenAddMember}
               onOpenEditMember={handleOpenEditMember}
@@ -660,6 +661,7 @@ export function App() {
             /* Registration Fees Ledger */
             <RegistrationFeesPage
               members={members}
+              settings={settings}
               onRefresh={() => loadAllData(false)}
               onToggleFeeStatus={handleToggleMemberRegistrationFee}
             />

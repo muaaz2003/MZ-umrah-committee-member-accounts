@@ -24,6 +24,7 @@ import {
   Home,
 } from 'lucide-react';
 import { UserRole } from '../types';
+import mzaLogo from '../assets/images/mza-logo.png';
 
 interface SidebarProps {
   currentPage: string;
@@ -91,26 +92,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         } border-r border-emerald-800`}
       >
         {/* Brand Header */}
-        <div className="p-5 sm:p-6 border-b border-emerald-800 flex items-center justify-between">
-          <div>
-            <div className="text-xl font-black tracking-tight text-white flex items-center gap-2">
+        <div className="p-4 sm:p-5 border-b border-emerald-800 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src={mzaLogo}
+              alt="MZA Umrah Committee Logo"
+              className="h-12 sm:h-14 w-auto object-contain shrink-0 drop-shadow-sm"
+              draggable={false}
+            />
+            <div className="flex items-center gap-1.5 text-lg sm:text-xl font-black tracking-tight text-white font-sans">
               <span>MZA UMRAH</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-400 text-emerald-950 rounded">
+              <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 bg-amber-400 text-emerald-950 rounded shadow-2xs">
                 PK
               </span>
             </div>
-            <div className="text-[10px] uppercase tracking-widest text-emerald-300 opacity-80 font-medium">
-              Committee System
-            </div>
-            {isAdminLoggedIn ? (
-              <div className="text-[11px] text-emerald-200 mt-1">
-                ایڈمن: <strong>عبد الشکور مدنی</strong>
-              </div>
-            ) : (
-              <div className="text-[10px] text-emerald-300/80 mt-1">
-                Portal: <strong>Online System</strong>
-              </div>
-            )}
           </div>
 
           {/* Close button on mobile */}

@@ -22,6 +22,7 @@ import jsPDF from 'jspdf';
 import { Member, MemberStatus, CommitteeSettings } from '../types';
 import { getNextMembershipNumber, createMember, updateMember } from '../services/firebaseService';
 import { DEFAULT_MONTHLY_INSTALLMENT, PLAN_A_TOTAL, PLAN_B_TOTAL, formatPKR } from '../utils/calculations';
+import mzaLogo from '../assets/images/mza-logo.png';
 
 interface AddMemberModalProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 }) => {
   const defaultJoining = settings?.committeeStartDate || '2026-10-01';
   const defaultFirstDue = settings?.firstInstallmentDueDate || '2026-10-10';
+  const fixedRegistrationFee = Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 1000);
 
   const [memberNumber, setMemberNumber] = useState('MZA-#001');
   const [fullName, setFullName] = useState('');
@@ -58,7 +60,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const [firstInstallmentDueDate, setFirstInstallmentDueDate] = useState(defaultFirstDue);
   const [planMonths, setPlanMonths] = useState<24 | 36>(24);
   const [monthlyInstallment, setMonthlyInstallment] = useState<number | string>(5000);
-  const [registrationFee, setRegistrationFee] = useState<number | string>(1000);
+  const [registrationFee, setRegistrationFee] = useState<number>(fixedRegistrationFee);
   const [nomineeName, setNomineeName] = useState('');
   const [nomineeRelation, setNomineeRelation] = useState('');
   const [nomineeCnic, setNomineeCnic] = useState('');
@@ -194,7 +196,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         setFirstInstallmentDueDate(memberToEdit.firstInstallmentDueDate || defaultFirstDue);
         setPlanMonths(memberToEdit.planMonths === 36 ? 36 : 24);
         setMonthlyInstallment(memberToEdit.monthlyInstallment || 5000);
-        setRegistrationFee(memberToEdit.registrationFee ?? 1000);
+        setRegistrationFee(fixedRegistrationFee);
         setNomineeName(memberToEdit.nomineeName || '');
         setNomineeRelation(memberToEdit.nomineeRelation || '');
         setNomineeCnic(memberToEdit.nomineeCnic || '');
@@ -217,7 +219,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         setFirstInstallmentDueDate(defaultFirstDue);
         setPlanMonths(24);
         setMonthlyInstallment(5000);
-        setRegistrationFee(1000);
+        setRegistrationFee(fixedRegistrationFee);
         setNomineeName('');
         setNomineeRelation('');
         setNomineeCnic('');
@@ -244,7 +246,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         }
       }
     }
-  }, [isOpen, memberToEdit, existingMembers]);
+  }, [isOpen, memberToEdit, existingMembers, fixedRegistrationFee]);
 
   // Lock background body scroll when modal is open so only the form scrolls
   useEffect(() => {
@@ -346,7 +348,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           monthlyInstallment: finalMonthly,
           totalCommitteeAmount: updatedTotal,
           dueAmount: updatedDue,
-          registrationFee: Number(registrationFee) || 0,
+          registrationFee: fixedRegistrationFee,
           nomineeName: nomineeName.trim(),
           nomineeRelation: nomineeRelation.trim(),
           nomineeCnic: nomineeCnic.trim(),
@@ -384,8 +386,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             planMonths,
             monthlyInstallment: finalMonthly,
             totalCommitteeAmount: planMonths * finalMonthly,
-            registrationFee: Number(registrationFee) || 0,
-            registrationFeeStatus: (Number(registrationFee) > 0 ? 'Paid' : 'Unpaid'),
+            registrationFee: fixedRegistrationFee,
+            registrationFeeStatus: (fixedRegistrationFee > 0 ? 'Paid' : 'Unpaid'),
             nomineeName: nomineeName.trim(),
             nomineeRelation: nomineeRelation.trim(),
             nomineeCnic: nomineeCnic.trim(),
@@ -418,9 +420,15 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
       }}
     >
       <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 max-w-2xl w-full overflow-hidden flex flex-col h-[100dvh] sm:h-auto sm:max-h-[92vh] my-0 sm:my-auto">
-        {/* Header - Centered Large Heading with no sub-paragraph */}
-        <div className="relative bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-4 text-white flex items-center justify-center shrink-0 shadow-md border-b border-emerald-800/60">
-          <div className="text-center px-8" dir="rtl">
+        {/* Header - Centered Large Heading with Logo */}
+        <div className="relative bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-3.5 text-white flex items-center justify-center shrink-0 shadow-md border-b border-emerald-800/60">
+          <div className="text-center px-8 flex items-center justify-center gap-3" dir="rtl">
+            <img
+              src={mzaLogo}
+              alt="MZA Umrah Logo"
+              className="h-8 sm:h-9 w-auto object-contain bg-white/10 p-0.5 rounded-lg border border-emerald-700 shrink-0"
+              draggable={false}
+            />
             <h3 className="font-black text-base sm:text-xl md:text-2xl tracking-wide text-white flex items-center justify-center flex-wrap gap-2">
               <span>{memberToEdit ? 'ممبر کی تفصیلات میں ترمیم' : 'نئی ممبر رجسٹریشن فارم'}</span>{' '}
               <bdi dir="ltr" className="text-amber-300 font-bold text-sm sm:text-lg font-sans">
@@ -775,16 +783,21 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
               <div>
                 <label className="block text-xs font-bold text-slate-800 tracking-wide mb-1.5 text-right" dir="rtl">
                   <span className="text-slate-900">رجسٹریشن فیس</span>{' '}
-                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Registration Fee)</bdi>
+                  <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Registration Fee - Fixed)</bdi>
                 </label>
-                <input
-                  type="number"
-                  value={registrationFee}
-                  onChange={(e) => setRegistrationFee(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-slate-800 font-mono font-bold focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-hidden transition-all shadow-2xs"
-                  placeholder="0"
-                  dir="ltr"
-                />
+                <div className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between shadow-2xs select-none">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200/80 px-2.5 py-0.5 rounded-lg">
+                      سیٹنگز سے فکسڈ (Settings Fixed)
+                    </span>
+                  </div>
+                  <span className="font-mono font-black text-emerald-950 text-sm sm:text-base tracking-wide" dir="ltr">
+                    Rs. {fixedRegistrationFee.toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1 text-right font-medium" dir="rtl">
+                  یہ فیس کمیٹی سیٹنگز میں مقررہ فکسڈ رقم کے مطابق ہے۔
+                </p>
               </div>
             </div>
           </div>
@@ -1144,19 +1157,26 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         >
           {/* Header Banner */}
           <div className="border-b-2 border-emerald-900 pb-4 mb-4 flex items-center justify-between">
-            <div className="text-right">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-3 h-3 bg-emerald-700 rounded-full inline-block"></span>
-                <h1 className="text-2xl font-black text-emerald-950 font-urdu">
-                  ایم زیڈ اے عمرہ کمیٹی پاکستان
-                </h1>
+            <div className="flex items-center gap-4">
+              <img
+                src={mzaLogo}
+                alt="MZA Umrah Committee Logo"
+                className="h-16 w-auto object-contain shrink-0"
+              />
+              <div className="text-right">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-3 h-3 bg-emerald-700 rounded-full inline-block"></span>
+                  <h1 className="text-2xl font-black text-emerald-950 font-urdu">
+                    ایم زیڈ اے عمرہ کمیٹی پاکستان
+                  </h1>
+                </div>
+                <p className="text-xs text-emerald-800 font-bold font-urdu">
+                  زیر سرپرستی: ایم زیڈ اے ویلفیئر ٹرسٹ (رجسٹرڈ) • قائم کردہ 2019
+                </p>
+                <p className="text-[10px] text-slate-500 font-sans font-bold uppercase tracking-wider mt-0.5">
+                  MZA UMRAH COMMITTEE PAKISTAN • OFFICIAL MEMBER REGISTRATION FORM
+                </p>
               </div>
-              <p className="text-xs text-emerald-800 font-bold font-urdu">
-                زیر سرپرستی: ایم زیڈ اے ویلفیئر ٹرسٹ (رجسٹرڈ) • قائم کردہ 2019
-              </p>
-              <p className="text-[10px] text-slate-500 font-sans font-bold uppercase tracking-wider mt-0.5">
-                MZA UMRAH COMMITTEE PAKISTAN • OFFICIAL MEMBER REGISTRATION FORM
-              </p>
             </div>
 
             <div className="text-left flex flex-col items-end">
@@ -1224,7 +1244,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                   <td className="p-2.5 font-bold text-slate-700">کل متوقع رقم:</td>
                   <td className="p-2.5 font-bold text-emerald-950 font-mono">Rs. {totalAmount.toLocaleString()}</td>
                   <td className="p-2.5 font-bold text-slate-700">رجسٹریشن فیس:</td>
-                  <td className="p-2.5 font-bold text-emerald-900 font-mono">Rs. {Number(registrationFee || 1000).toLocaleString()}</td>
+                  <td className="p-2.5 font-bold text-emerald-900 font-mono">Rs. {fixedRegistrationFee.toLocaleString()}</td>
                 </tr>
                 <tr className="bg-slate-50">
                   <td className="p-2.5 font-bold text-slate-700">رہائشی پتہ:</td>

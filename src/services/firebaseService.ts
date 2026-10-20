@@ -160,6 +160,25 @@ export async function updateSettings(settings: Partial<CommitteeSettings>, userE
     if (settings.adminPassword) {
       safeStorage.setItem('mz_admin_custom_password', settings.adminPassword);
     }
+
+    // If registrationFee was updated in settings, synchronize all members automatically
+    const targetFee = settings.registrationFee !== undefined ? Number(settings.registrationFee) : settings.defaultRegistrationFee !== undefined ? Number(settings.defaultRegistrationFee) : undefined;
+    if (targetFee !== undefined && !isNaN(targetFee)) {
+      const membersSnap = await getDocs(collection(db, 'members'));
+      const batch = writeBatch(db);
+      let updatedCount = 0;
+      membersSnap.forEach((mDoc) => {
+        batch.update(mDoc.ref, {
+          registrationFee: targetFee,
+          updatedAt: new Date().toISOString(),
+        });
+        updatedCount++;
+      });
+      if (updatedCount > 0) {
+        await batch.commit();
+      }
+    }
+
     await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_SETTINGS', 'Settings', 'general', 'Updated committee general settings');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);

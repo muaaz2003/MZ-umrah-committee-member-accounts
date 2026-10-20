@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Member, Installment, Receipt } from '../types';
 import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import mzaLogo from '../assets/images/mza-logo.png';
 
 interface ZatiRecordPageProps {
   members: Member[];
@@ -118,10 +119,21 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
       <div className="bg-[#064E3B] rounded-3xl p-6 sm:p-10 text-white shadow-sm relative overflow-hidden">
         <div className="relative z-10 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold px-2.5 py-0.5 bg-amber-400 text-emerald-950 rounded-full inline-flex items-center shadow-2xs font-sans uppercase tracking-wider">
-                PUBLIC PORTAL
-              </span>
+            <div className="flex items-center gap-3">
+              <img
+                src={mzaLogo}
+                alt="MZA Umrah Logo"
+                className="h-10 sm:h-12 w-auto object-contain bg-white/10 p-1 rounded-xl shrink-0 border border-white/20 shadow-xs"
+                draggable={false}
+              />
+              <div>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 bg-amber-400 text-emerald-950 rounded-full inline-flex items-center shadow-2xs font-sans uppercase tracking-wider">
+                  PUBLIC PORTAL
+                </span>
+                <div className="text-[11px] text-emerald-200 font-medium font-urdu mt-0.5">
+                  ایم زیڈ اے عمرہ کمیٹی پاکستان
+                </div>
+              </div>
             </div>
 
             {!isAdminLoggedIn ? (

@@ -7,21 +7,24 @@ import {
   ToggleLeft,
   ToggleRight,
 } from 'lucide-react';
-import { Member } from '../types';
+import { Member, CommitteeSettings } from '../types';
 import { formatPKR } from '../utils/calculations';
 import { updateMemberRegistrationFeeStatus } from '../services/firebaseService';
 
 interface RegistrationFeesPageProps {
   members: Member[];
+  settings?: CommitteeSettings;
   onRefresh: () => void;
   onToggleFeeStatus?: (memberId: string, nextStatus: 'Paid' | 'Unpaid') => void;
 }
 
 export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
   members,
+  settings,
   onRefresh,
   onToggleFeeStatus,
 }) => {
+  const fixedFee = Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 1000);
   const [filter, setFilter] = useState<'all' | 'Paid' | 'Unpaid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -31,7 +34,7 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
   const unpaidCount = totalMembers - paidCount;
   const totalCollected = members
     .filter((m) => m.registrationFeeStatus === 'Paid')
-    .reduce((sum, m) => sum + (m.registrationFee || 1000), 0);
+    .reduce((sum, m) => sum + (m.registrationFee || fixedFee), 0);
 
   const filtered = members.filter((m) => {
     if (filter !== 'all' && m.registrationFeeStatus !== filter) return false;
@@ -179,7 +182,7 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
                   {m.planMonths} Months
                 </td>
                 <td className="py-3 px-4 text-right font-bold text-slate-900">
-                  Rs. {m.registrationFee || 1000}
+                  Rs. {m.registrationFee || fixedFee}
                 </td>
                 <td className="py-3 px-4 text-center">
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${

@@ -13,6 +13,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { AuthUser, Member, UserRole } from '../types';
+import mzaLogo from '../assets/images/mza-logo.png';
 
 interface HeaderProps {
   currentUser: AuthUser;
@@ -110,21 +111,46 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="no-print h-16 bg-white border-b border-gray-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 lg:px-8">
-      {/* Left side: Hamburger menu button for mobile + Title */}
-      <div className="flex items-center gap-3">
+    <header className="no-print h-16 bg-white border-b border-gray-200 sticky top-0 z-30 flex items-center justify-between px-3 sm:px-6 lg:px-8">
+      {/* Left side: Hamburger menu button for mobile + Umrah Logo + Page Title */}
+      <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
         {/* Mobile menu trigger */}
         <button
           type="button"
           onClick={onToggleMobileMenu}
-          className="lg:hidden p-2 -ml-1.5 text-gray-700 hover:text-emerald-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+          className="lg:hidden p-1.5 -ml-1 text-gray-700 hover:text-emerald-900 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer shrink-0"
           title="Open Navigation Menu"
           aria-label="Open Navigation Menu"
         >
-          <Menu className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-950" />
+          <Menu className="w-5 h-5 text-emerald-950" />
         </button>
 
-        {getPageTitle()}
+        {/* Umrah Logo */}
+        <button
+          type="button"
+          onClick={() => onNavigate('dashboard')}
+          className="flex items-center gap-2 text-left group cursor-pointer focus:outline-hidden shrink-0"
+          title="MZA Umrah Committee - Go to Dashboard"
+        >
+          <img
+            src={mzaLogo}
+            alt="MZA Umrah Committee Logo"
+            className="h-9 sm:h-11 w-auto object-contain shrink-0 drop-shadow-2xs group-hover:scale-105 transition-transform"
+            draggable={false}
+          />
+          <div className="hidden md:flex items-center gap-1.5 text-xs sm:text-sm font-black text-emerald-950 tracking-tight font-sans">
+            <span>MZA UMRAH</span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-400 text-emerald-950 rounded shadow-2xs">
+              PK
+            </span>
+          </div>
+        </button>
+
+        <div className="h-6 w-px bg-slate-200 hidden sm:block shrink-0 mx-0.5" />
+
+        <div className="min-w-0 truncate">
+          {getPageTitle()}
+        </div>
       </div>
 
       {/* Right side: Search, Admin controls */}

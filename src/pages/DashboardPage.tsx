@@ -26,7 +26,7 @@ import {
   Percent,
   Coins,
 } from 'lucide-react';
-import { Member, Payment, Receipt, FinancialSummary, Installment, Refund } from '../types';
+import { Member, Payment, Receipt, FinancialSummary, Installment, Refund, CommitteeSettings } from '../types';
 import { formatPKR, formatDateDisplay, getDaysLate, computeInstallmentStatus, getTodayKarachiDate } from '../utils/calculations';
 import { MemberCard } from '../components/MemberCard';
 
@@ -37,6 +37,7 @@ interface DashboardPageProps {
   refunds?: Refund[];
   summary: FinancialSummary;
   installments: Installment[];
+  settings?: CommitteeSettings;
   onOpenQistWasool: (member?: Member) => void;
   onOpenAddMember: () => void;
   onSelectMember: (memberId: string) => void;
@@ -56,6 +57,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   refunds = [],
   summary,
   installments,
+  settings,
   onOpenQistWasool,
   onOpenAddMember,
   onSelectMember,
@@ -424,7 +426,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="text-lg font-bold text-emerald-800 mt-0.5">
             {formatPKR(summary.registrationFeesCollected)}
           </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">Rs. 1,000 non-refundable</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">
+            Rs. {Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 1000).toLocaleString()} non-refundable
+          </div>
         </div>
 
         <button
