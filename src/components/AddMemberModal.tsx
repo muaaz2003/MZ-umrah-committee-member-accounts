@@ -422,18 +422,15 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
       <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 max-w-2xl w-full overflow-hidden flex flex-col h-[100dvh] sm:h-auto sm:max-h-[92vh] my-0 sm:my-auto">
         {/* Header - Centered Large Heading with Logo */}
         <div className="relative bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 px-4 sm:px-6 py-3.5 text-white flex items-center justify-center shrink-0 shadow-md border-b border-emerald-800/60">
-          <div className="text-center px-8 flex items-center justify-center gap-3" dir="rtl">
+          <div className="text-center px-8 flex items-center justify-center gap-3">
             <img
               src={mzaLogo}
               alt="MZA Umrah Logo"
-              className="h-8 sm:h-9 w-auto object-contain bg-white/10 p-0.5 rounded-lg border border-emerald-700 shrink-0"
+              className="h-11 sm:h-12 w-auto object-contain shrink-0 drop-shadow-sm"
               draggable={false}
             />
-            <h3 className="font-black text-base sm:text-xl md:text-2xl tracking-wide text-white flex items-center justify-center flex-wrap gap-2">
-              <span>{memberToEdit ? 'ممبر کی تفصیلات میں ترمیم' : 'نئی ممبر رجسٹریشن فارم'}</span>{' '}
-              <bdi dir="ltr" className="text-amber-300 font-bold text-sm sm:text-lg font-sans">
-                {memberToEdit ? '(Edit Member Details)' : '(New Member Registration Form)'}
-              </bdi>
+            <h3 className="font-black text-base sm:text-xl md:text-2xl tracking-wide text-white flex items-center justify-center font-sans">
+              <span>{memberToEdit ? 'Edit Member Details' : 'New Member Registration Form'}</span>
             </h3>
           </div>
           <button

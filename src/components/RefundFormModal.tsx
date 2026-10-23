@@ -20,6 +20,7 @@ import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import { Member, Refund } from '../types';
 import { recordRefund } from '../services/firebaseService';
+import mzaLogo from '../assets/images/mza-logo.png';
 import {
   formatPKR,
   numberToWordsEnglish,
@@ -731,7 +732,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
         
         {/* Top Control Bar aligned with App's Theme */}
         <div className="w-full bg-[#064E3B] text-white px-2.5 sm:px-5 py-2 sm:py-3 flex items-center justify-between gap-2 shrink-0 border-b border-emerald-950 shadow-sm">
-          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               type="button"
               onClick={handleClearAll}
@@ -740,6 +741,12 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             >
               <RotateCcw className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
             </button>
+            <img
+              src={mzaLogo}
+              alt="MZA Umrah Logo"
+              className="h-8 sm:h-9 w-auto object-contain shrink-0 drop-shadow-sm"
+              draggable={false}
+            />
             <div className="min-w-0 flex items-center gap-1.5 sm:gap-2">
               <h2 className="text-xs sm:text-base font-bold text-white tracking-tight truncate">
                 فارم واپسی رقم (Refund Voucher)
@@ -821,12 +828,15 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             {/* Top Ornamental Header Band */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b-2 border-emerald-800/80 pb-3 sm:pb-4 mb-3 sm:mb-4 gap-3 sm:gap-4">
               {/* Left Brand Identity */}
-              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 w-full sm:w-auto">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-[#064E3B] text-amber-400 flex items-center justify-center font-bold shadow-md shadow-emerald-950/10 shrink-0">
-                  <ShieldCheck className="w-6 h-6 sm:w-7 sm:h-7" />
-                </div>
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 w-full sm:w-auto">
+                <img
+                  src={mzaLogo}
+                  alt="MZA Umrah Committee Logo"
+                  className="h-16 sm:h-20 w-auto object-contain shrink-0 drop-shadow-sm"
+                  draggable={false}
+                />
                 <div className="min-w-0">
-                  <h1 className="text-sm xs:text-base sm:text-xl md:text-2xl font-black text-[#064E3B] tracking-tight uppercase leading-tight truncate sm:whitespace-normal">
+                  <h1 className="text-sm xs:text-base sm:text-xl md:text-2xl font-black text-[#064E3B] tracking-tight uppercase leading-tight truncate sm:whitespace-normal font-sans">
                     M.Z.A UMRAH COMMITTEE
                   </h1>
                   <p className="text-[10px] sm:text-xs font-bold text-slate-600 leading-tight mt-0.5 truncate sm:whitespace-normal">

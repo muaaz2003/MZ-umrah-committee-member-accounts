@@ -364,17 +364,17 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
             <img
               src={mzaLogo}
               alt="MZA Umrah Committee Logo"
-              className="h-10 w-auto object-contain bg-white/10 p-1 rounded-xl shrink-0 border border-emerald-700/60 shadow-xs"
+              className="h-12 sm:h-14 w-auto object-contain shrink-0 drop-shadow-sm"
               draggable={false}
             />
-            <div className="min-w-0">
-              <h3 className="font-black text-base sm:text-lg tracking-wide text-white truncate">
-                {editingReceipt ? 'رسید درست کریں (Edit Receipt & Re-issue)' : 'قسط وصول کریں (Qist Wasool Karein)'}
+            <div className="min-w-0 flex flex-col justify-center">
+              <h3 className="font-black text-base sm:text-lg tracking-wide text-white truncate font-sans">
+                {editingReceipt ? 'Edit Receipt & Re-issue' : 'Qist Wasool Karein'}
               </h3>
-              <p className="text-xs text-amber-300 font-medium mt-0.5 truncate">
+              <p className="text-xs text-amber-300 font-medium truncate font-sans">
                 {editingReceipt
-                  ? `رسید #${editingReceipt.receiptNumber} میں ترمیم — محفوظ کرنے پر نئی رسید جاری ہوگی`
-                  : 'Record Physical Installment Payment & Issue Official Receipt'}
+                  ? `Receipt #${editingReceipt.receiptNumber} Correction`
+                  : 'MZA Umrah Committee Pakistan — Official Receipt Entry'}
               </p>
             </div>
           </div>
