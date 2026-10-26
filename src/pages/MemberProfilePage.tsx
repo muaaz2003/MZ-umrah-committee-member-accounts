@@ -17,6 +17,8 @@ import {
   ShieldAlert,
   Info,
   RefreshCw,
+  UserCheck,
+  AlertCircle,
 } from 'lucide-react';
 import { Member, Installment, Payment, Receipt, Refund, UserRole } from '../types';
 import { formatPKR, formatDateDisplay, computeInstallmentStatus, getTodayKarachiDate } from '../utils/calculations';
@@ -27,6 +29,7 @@ import {
   getMemberRefunds,
   recordRefund,
   rescheduleSingleMemberInstallments,
+  restoreMemberToActive,
 } from '../services/firebaseService';
 import { RefundFormModal } from '../components/RefundFormModal';
 
@@ -60,6 +63,38 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [rescheduleMsg, setRescheduleMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [showRestoreConfirmModal, setShowRestoreConfirmModal] = useState(false);
+  const [restoreToast, setRestoreToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleExecuteRestore = async () => {
+    try {
+      setIsRestoring(true);
+      setShowRestoreConfirmModal(false);
+      const res = await restoreMemberToActive(member.id, currentUserEmail);
+      setIsRestoring(false);
+      if (res?.success) {
+        setRestoreToast({
+          type: 'success',
+          text: `ممبر ${member.fullName} (${member.memberNumber}) کو کامیابی سے Active ممبرشپ میں بحال کر دیا گیا۔ تمام سابقہ اقساط اور رسیدیں محفوظ ہیں۔`,
+        });
+        onRefreshMember(member.id);
+      } else {
+        setRestoreToast({
+          type: 'error',
+          text: 'ممبر بحال نہیں ہو سکا۔ برائے مہربانی دوبارہ کوشش کریں۔',
+        });
+      }
+    } catch (err: any) {
+      console.error('Error restoring member to active:', err);
+      setIsRestoring(false);
+      setShowRestoreConfirmModal(false);
+      setRestoreToast({
+        type: 'error',
+        text: err?.message || 'خرابی پیش آئی۔ ممبر بحال نہیں ہو سکا۔',
+      });
+    }
+  };
 
   const handleFixMemberDates = async () => {
     try {
@@ -166,9 +201,113 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                 <span>Qist Wasool Karein</span>
               </button>
             )}
+
+            {member.status !== 'Active' && (
+              <button
+                onClick={() => setShowRestoreConfirmModal(true)}
+                disabled={isRestoring}
+                className="flex-1 sm:flex-none px-4 py-2 text-xs font-bold text-emerald-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <UserCheck className="w-4 h-4 text-emerald-950" />
+                <span>{isRestoring ? 'بحال ہو رہا ہے...' : 'ممبر بحال کریں (Restore to Active)'}</span>
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Restore Toast Notification */}
+      {restoreToast && (
+        <div
+          className={`p-3.5 rounded-2xl flex items-center justify-between gap-3 text-xs font-bold shadow-xs no-print ${
+            restoreToast.type === 'success'
+              ? 'bg-emerald-50 text-emerald-900 border border-emerald-300'
+              : 'bg-rose-50 text-rose-900 border border-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {restoreToast.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            )}
+            <span>{restoreToast.text}</span>
+          </div>
+          <button
+            onClick={() => setRestoreToast(null)}
+            className="p-1 text-slate-500 hover:text-slate-800 rounded-lg cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Cancelled Member Notice Banner */}
+      {member.status === 'Cancelled' && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs no-print">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-6 h-6 text-amber-600 shrink-0" />
+            <div>
+              <div className="font-bold text-sm font-urdu">
+                یہ ممبر فی الوقت منسوخ شدہ (Cancelled) ہیں۔
+              </div>
+              <div className="text-xs text-amber-800 mt-0.5 font-urdu">
+                ان کا تمام سابقہ ریکارڈ (ادا شدہ رقم، اقساط، اور رسیدیں) محفوظ ہے۔ آپ ایک کلک سے ان کی ممبرشپ کو دوبارہ Active میں بحال کر سکتے ہیں۔
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowRestoreConfirmModal(true)}
+            disabled={isRestoring}
+            className="px-4 py-2 text-xs font-bold bg-[#064E3B] text-white hover:bg-emerald-800 rounded-xl shadow-xs transition-colors shrink-0 cursor-pointer flex items-center gap-1.5"
+          >
+            <UserCheck className="w-4 h-4 text-amber-300" />
+            <span>{isRestoring ? 'بحال ہو رہا ہے...' : 'ابھی ممبرشپ بحال کریں (Restore Member)'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* IN-APP RESTORE CONFIRMATION MODAL */}
+      {showRestoreConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-md w-full p-6 text-center space-y-4 border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+              <UserCheck className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 font-urdu">
+                ممبرشپ دوبارہ بحال کریں؟
+              </h3>
+              <p className="text-xs text-slate-600 font-urdu mt-2 leading-relaxed">
+                کیا آپ واقعی <strong>{member.fullName} ({member.memberNumber})</strong> کو دوبارہ <strong>Active</strong> ممبرشپ میں بحال کرنا چاہتے ہیں؟
+              </p>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mt-3 text-[11px] font-bold text-emerald-900 font-urdu text-right" dir="rtl">
+                ✓ ممبر کے تمام سابقہ ریکارڈز (کل ادا شدہ رقم: {formatPKR(member.paidAmount || 0)}، رسیدیں، اور شیڈول) جوں کے توں محفوظ رہیں گے اور آپ اگلے مہینے کی قسط وصول کر سکیں گے۔
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowRestoreConfirmModal(false)}
+                disabled={isRestoring}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                منسوخ (Cancel)
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteRestore}
+                disabled={isRestoring}
+                className="px-6 py-2.5 text-xs font-black bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl shadow-md transition-all active:scale-98 cursor-pointer disabled:opacity-50 flex items-center gap-2"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>{isRestoring ? 'بحال ہو رہا ہے...' : 'جی ہاں، بحال کریں (Restore)'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Responsive Grid with Quick Panel on Right */}
       <div className="flex flex-col xl:flex-row gap-6">

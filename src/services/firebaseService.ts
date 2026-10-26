@@ -19,6 +19,7 @@ import {
   Payment,
   Receipt,
   Refund,
+  CancellationNotice,
   CommitteeSettings,
   AuditLog,
   PaymentMethod,
@@ -271,11 +272,9 @@ export async function getMembers(): Promise<Member[]> {
     const snap = await getDocs(collection(db, path));
     const members = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Member) }));
     const sorted = members.sort((a, b) => (a.memberNumber > b.memberNumber ? 1 : -1));
-    if (sorted.length > 0) {
-      try {
-        localStorage.setItem('mz_cached_members', JSON.stringify(sorted));
-      } catch {}
-    }
+    try {
+      localStorage.setItem('mz_cached_members', JSON.stringify(sorted));
+    } catch {}
     return sorted;
   } catch (error) {
     console.warn('Could not fetch members from Firestore, checking cache:', error);
@@ -543,6 +542,39 @@ export async function archiveMember(
       `Archived member ${member.fullName} (${member.memberNumber}). Reason: ${reason}`
     );
     return { success: true, message: 'Member safely archived.' };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function restoreMemberToActive(
+  memberId: string,
+  userEmail: string = 'admin'
+): Promise<{ success: boolean; message: string }> {
+  const path = `members/${memberId}`;
+  try {
+    const member = await getMemberById(memberId);
+    if (!member) return { success: false, message: 'Member not found' };
+
+    const now = new Date().toISOString();
+    await updateDoc(doc(db, 'members', memberId), {
+      status: 'Active',
+      updatedAt: now,
+    });
+
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'RESTORE_MEMBER',
+      'Member',
+      memberId,
+      `Restored cancelled/archived member ${member.fullName} (${member.memberNumber}) to Active status with full previous records intact.`
+    );
+
+    return {
+      success: true,
+      message: `ممبر ${member.fullName} (${member.memberNumber}) کو دوبارہ ایکٹو ممبرشپ میں کامیابی سے بحال کر دیا گیا ہے۔ تمام سابقہ اقساط اور ریکارڈز محفوظ ہیں۔`,
+    };
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -1344,17 +1376,94 @@ export async function getRefunds(): Promise<Refund[]> {
 }
 
 // -------------------------------------------------------------
+// CANCELLATION NOTICE MANAGEMENT SERVICE
+// -------------------------------------------------------------
+export async function recordCancellationNotice(
+  data: Omit<CancellationNotice, 'id' | 'createdAt'>,
+  updateMemberStatus: boolean = true,
+  userEmail: string = 'admin'
+): Promise<CancellationNotice> {
+  const canId = `can_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+
+  const noticeRecord: CancellationNotice = {
+    ...data,
+    id: canId,
+    createdAt: now,
+  };
+
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'cancellations', canId), noticeRecord);
+
+  if (updateMemberStatus && data.memberId) {
+    const memberRef = doc(db, 'members', data.memberId);
+    batch.update(memberRef, {
+      status: 'Cancelled',
+      notes: `Cancellation Notice #${data.noticeNumber} issued on ${data.noticeDate}. Refunded Rs. ${data.refundAmount}`,
+      updatedAt: now,
+    });
+  }
+
+  try {
+    await batch.commit();
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'ISSUE_CANCELLATION',
+      'Cancellation',
+      canId,
+      `Issued cancellation notice #${data.noticeNumber} for ${data.fullName} (${data.memberNumber || data.cnic}). Refunded: Rs. ${data.refundAmount}.`
+    );
+    return noticeRecord;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'cancellations');
+  }
+}
+
+export async function getAllCancellations(): Promise<CancellationNotice[]> {
+  const path = 'cancellations';
+  try {
+    const snap = await getDocs(query(collection(db, path), orderBy('createdAt', 'desc')));
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as CancellationNotice) }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function deleteCancellationNotice(
+  id: string,
+  userEmail: string = 'admin'
+): Promise<void> {
+  const path = `cancellations/${id}`;
+  try {
+    await deleteDoc(doc(db, 'cancellations', id));
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'DELETE_CANCELLATION',
+      'Cancellation',
+      id,
+      `Deleted cancellation notice record #${id}`
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// -------------------------------------------------------------
 // SEED REALISTIC DEMO DATA (IF DATABASE IS FRESH)
 // -------------------------------------------------------------
 export async function seedInitialDemoDataIfEmpty(): Promise<void> {
+  // Disabled permanently: Real production database. Never seed demo data.
+  return;
+}
+
+async function _deprecatedSeedDemoData(): Promise<void> {
   try {
     const membersSnap = await getDocs(collection(db, 'members'));
     if (!membersSnap.empty) {
-      // Database already has members, do not overwrite
       return;
     }
-
-    console.log('Seeding initial realistic Umrah committee demo records...');
 
     // 1. Ensure settings exist
     await setDoc(doc(db, 'settings', 'general'), DEFAULT_SETTINGS);

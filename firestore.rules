@@ -43,6 +43,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Cancellations collection
+    match /cancellations/{cancellationId} {
+      allow read, write: if true;
+    }
+
     // Audit logs
     match /auditLogs/{logId} {
       allow read, create: if true;

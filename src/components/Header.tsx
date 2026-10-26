@@ -98,6 +98,7 @@ export const Header: React.FC<HeaderProps> = ({
       overdue: 'Overdue Installments',
       receipts: 'Official Receipts',
       refunds: 'Refund Management',
+      cancellations: 'Cancellation Notices (منسوخی ممبرشپ)',
       'registration-fees': 'Registration Fees',
       reports: 'Financial Reports',
       'audit-logs': 'System Audit Logs',

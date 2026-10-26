@@ -137,6 +137,35 @@ export interface Refund {
   createdAt: string;
 }
 
+export interface CancellationNotice {
+  id: string;
+  noticeNumber: string;
+  memberId?: string;
+  memberNumber?: string;
+  salutation: 'محترم جناب' | 'محترمہ';
+  fullName: string;
+  relationType: 'ولد' | 'زوجہ' | 'بنت';
+  fatherOrHusbandName: string;
+  cnic: string;
+  address: string;
+  mobile?: string;
+  noticeDate: string;
+  subject: string;
+  planMonths: number;
+  installmentAmount: number;
+  firstInstallmentPaidAmount: number;
+  paidInstallmentsCount: number;
+  remainingInstallmentsCount: number;
+  refundAmount: number;
+  refundAmountInWordsUrdu?: string;
+  issuedBy: string;
+  status: 'Issued' | 'Settled';
+  memberSignature?: string;
+  adminSignature?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface FinancialSummary {
   totalCommitteeAmount: number;
   totalPaidAmount: number;

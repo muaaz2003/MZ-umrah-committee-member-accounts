@@ -22,6 +22,7 @@ import {
   Lock,
   Phone,
   Home,
+  FileX2,
 } from 'lucide-react';
 import { UserRole } from '../types';
 import mzaLogo from '../assets/images/mza-logo.png';
@@ -64,6 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'overdue', label: 'Overdue', icon: AlertTriangle, badge: overdueCount },
     { id: 'receipts', label: 'Receipts', icon: Receipt },
     { id: 'refunds', label: 'Refunds', icon: RotateCcw },
+    { id: 'cancellations', label: 'Cancellations', icon: FileX2 },
     { id: 'registration-fees', label: 'Registration Fees', icon: BadgeDollarSign },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'audit-logs', label: 'Audit Logs', icon: History },

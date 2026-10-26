@@ -5,6 +5,7 @@ import {
   Receipt,
   Installment,
   Refund,
+  CancellationNotice,
   AuditLog,
   CommitteeSettings,
   AuthUser,
@@ -16,14 +17,15 @@ import {
   getAllReceipts,
   getAllInstallments,
   getAllRefunds,
+  getAllCancellations,
   getAllAuditLogs,
   getSettings,
   saveSettings,
   getMemberById,
   getMemberInstallments,
-  seedInitialDemoDataIfEmpty,
   updateMemberRegistrationFeeStatus,
   deleteMemberCompletely,
+  restoreMemberToActive,
   deleteReceiptAndRevertPayment,
   updateReceiptDetails,
   DEFAULT_SETTINGS,
@@ -45,6 +47,7 @@ import { QistWasooliPage } from './pages/QistWasooliPage';
 import { DueInstallmentsPage } from './pages/DueInstallmentsPage';
 import { ReceiptsListPage } from './pages/ReceiptsListPage';
 import { RefundsPage } from './pages/RefundsPage';
+import { CancellationsPage } from './pages/CancellationsPage';
 import { RegistrationFeesPage } from './pages/RegistrationFeesPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
@@ -103,6 +106,7 @@ export function App() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [refunds, setRefunds] = useState<Refund[]>([]);
+  const [cancellations, setCancellations] = useState<CancellationNotice[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [settings, setSettingsState] = useState<CommitteeSettings>(() => {
     try {
@@ -159,6 +163,7 @@ export function App() {
         receiptsResult,
         installmentsResult,
         refundsResult,
+        cancellationsResult,
         auditLogsResult,
         settingsResult,
       ] = await Promise.allSettled([
@@ -167,6 +172,7 @@ export function App() {
         getAllReceipts(),
         getAllInstallments(),
         getAllRefunds(),
+        getAllCancellations(),
         getAllAuditLogs(),
         getSettings(),
       ]);
@@ -176,27 +182,23 @@ export function App() {
       const receiptsData = receiptsResult.status === 'fulfilled' && receiptsResult.value ? receiptsResult.value : [];
       const installmentsData = installmentsResult.status === 'fulfilled' && installmentsResult.value ? installmentsResult.value : [];
       const refundsData = refundsResult.status === 'fulfilled' && refundsResult.value ? refundsResult.value : [];
+      const cancellationsData = cancellationsResult.status === 'fulfilled' && cancellationsResult.value ? cancellationsResult.value : [];
       const auditLogsData = auditLogsResult.status === 'fulfilled' && auditLogsResult.value ? auditLogsResult.value : [];
       const settingsData = settingsResult.status === 'fulfilled' && settingsResult.value ? settingsResult.value : null;
 
-      if (membersData && membersData.length > 0) {
-        setMembers(membersData);
+      if (membersResult.status === 'fulfilled') {
+        const freshMembers = membersData || [];
+        setMembers(freshMembers);
         try {
-          localStorage.setItem('mz_cached_members', JSON.stringify(membersData));
+          localStorage.setItem('mz_cached_members', JSON.stringify(freshMembers));
         } catch {}
-      } else if (showSpinner && membersResult.status === 'fulfilled' && membersData.length === 0) {
-        // Only seed demo data if the remote database is verified completely empty
-        await seedInitialDemoDataIfEmpty();
-        const freshMembers = await getAllMembers().catch(() => []);
-        if (freshMembers && freshMembers.length > 0) {
-          setMembers(freshMembers);
-        }
       }
 
       setPayments(paymentsData);
       setReceipts(receiptsData);
       setInstallments(installmentsData);
       setRefunds(refundsData);
+      setCancellations(cancellationsData);
       setAuditLogs(auditLogsData);
       if (settingsData) {
         setSettingsState(settingsData);
@@ -364,7 +366,13 @@ export function App() {
     try {
       setIsDeletingMember(true);
       // 1. Instant optimistic UI deletion
-      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+      setMembers((prev) => {
+        const next = prev.filter((m) => m.id !== memberId);
+        try {
+          localStorage.setItem('mz_cached_members', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       setInstallments((prev) => prev.filter((i) => i.memberId !== memberId));
       setPayments((prev) => prev.filter((p) => p.memberId !== memberId));
       setReceipts((prev) => prev.filter((r) => r.memberId !== memberId));
@@ -390,6 +398,31 @@ export function App() {
       setIsDeleteModalOpen(false);
       setMemberToDelete(null);
       loadAllData(false);
+    }
+  };
+
+  // Restore cancelled or archived member to Active status
+  const handleRestoreMemberToActive = async (memberId: string): Promise<boolean> => {
+    try {
+      // 1. Optimistic update
+      setMembers((prev) => {
+        const next = prev.map((m) => (m.id === memberId ? { ...m, status: 'Active' as const } : m));
+        try {
+          localStorage.setItem('mz_cached_members', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 2. Perform Firestore update
+      await restoreMemberToActive(memberId, currentUser.email);
+
+      // 3. Background reload
+      loadAllData(false);
+      return true;
+    } catch (err) {
+      console.error('Error restoring member:', err);
+      loadAllData(false);
+      return false;
     }
   };
 
@@ -656,6 +689,15 @@ export function App() {
               members={members}
               currentUserEmail={currentUser.email}
               onRefresh={loadAllData}
+            />
+          ) : currentPage === 'cancellations' ? (
+            /* Cancellation Notices & Record */
+            <CancellationsPage
+              cancellations={cancellations}
+              members={members}
+              currentUserEmail={currentUser.email}
+              onRestoreMember={handleRestoreMemberToActive}
+              onRefresh={() => loadAllData(false)}
             />
           ) : currentPage === 'registration-fees' ? (
             /* Registration Fees Ledger */
