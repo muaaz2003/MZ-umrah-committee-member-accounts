@@ -242,6 +242,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
   };
 
   // PDF Export
+  // PDF Export (Same as screen, zero text or layout shifts)
   const handleDownloadPdf = async () => {
     if (!printNoticeRef.current) return;
     setIsDownloadingPdf(true);
@@ -249,26 +250,114 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
 
     try {
       const element = printNoticeRef.current;
+      const targetWidth = element.offsetWidth > 0 ? element.offsetWidth : 760;
+
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 2.5,
         useCORS: true,
+        scrollY: 0,
         backgroundColor: '#ffffff',
         logging: false,
-        onclone: (clonedDoc, clonedEl) => {
-          clonedEl.style.width = '794px';
+        onclone: async (clonedDoc, clonedEl) => {
+          clonedEl.style.width = `${targetWidth}px`;
+          clonedEl.style.maxWidth = `${targetWidth}px`;
+          clonedEl.style.minWidth = `${targetWidth}px`;
           clonedEl.style.boxSizing = 'border-box';
           clonedEl.style.margin = '0 auto';
 
+          // Inject fonts
           const fontStyle = clonedDoc.createElement('style');
           fontStyle.textContent = `
-            @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .pdf-cloned-control-replacement {
+              box-sizing: border-box !important;
+              letter-spacing: 0 !important;
+              word-break: break-word !important;
+            }
           `;
           clonedDoc.head.appendChild(fontStyle);
+
+          if (clonedDoc.fonts) {
+            try {
+              await clonedDoc.fonts.ready;
+            } catch {
+              // Font ready fallback
+            }
+          }
+
+          // Replace form controls with exact static styled elements
+          // This completely prevents browser input/select rendering shifts in html2canvas
+          const clonedControls = clonedEl.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea');
+          const sourceControls = element.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea');
+
+          for (let i = 0; i < clonedControls.length; i++) {
+            const clonedControl = clonedControls[i];
+            const sourceControl = sourceControls[i];
+            if (!clonedControl || !sourceControl) continue;
+
+            const computed = window.getComputedStyle(sourceControl);
+            const isSelect = sourceControl.tagName.toLowerCase() === 'select';
+            const isTextarea = sourceControl.tagName.toLowerCase() === 'textarea';
+
+            let displayValue = '';
+            if (isSelect) {
+              const sel = sourceControl as HTMLSelectElement;
+              displayValue = sel.options[sel.selectedIndex]?.text || sel.value || '';
+            } else {
+              displayValue = (sourceControl as HTMLInputElement | HTMLTextAreaElement).value ?? '';
+            }
+
+            const replacement = clonedDoc.createElement(isTextarea ? 'div' : 'span');
+            replacement.className = `${sourceControl.className} pdf-cloned-control-replacement`;
+            replacement.textContent = displayValue;
+
+            // Preserve dimensions and display model exactly
+            replacement.style.boxSizing = 'border-box';
+            replacement.style.display = isTextarea ? 'block' : 'inline-block';
+            replacement.style.verticalAlign = computed.verticalAlign;
+
+            const measuredWidth = sourceControl.offsetWidth > 0 ? `${sourceControl.offsetWidth}px` : computed.width;
+            replacement.style.width = measuredWidth;
+            replacement.style.minWidth = computed.minWidth;
+            replacement.style.maxWidth = computed.maxWidth;
+
+            const measuredHeight = sourceControl.offsetHeight > 0 ? `${sourceControl.offsetHeight}px` : computed.height;
+            replacement.style.height = measuredHeight;
+            replacement.style.minHeight = computed.minHeight;
+            replacement.style.lineHeight = computed.lineHeight;
+
+            // Match exact padding and borders
+            replacement.style.padding = computed.padding;
+            replacement.style.paddingTop = computed.paddingTop;
+            replacement.style.paddingBottom = computed.paddingBottom;
+            replacement.style.paddingLeft = computed.paddingLeft;
+            replacement.style.paddingRight = computed.paddingRight;
+            replacement.style.margin = computed.margin;
+            replacement.style.border = computed.border;
+            replacement.style.borderBottom = computed.borderBottom;
+            replacement.style.borderTop = computed.borderTop;
+            replacement.style.borderLeft = computed.borderLeft;
+            replacement.style.borderRight = computed.borderRight;
+            replacement.style.borderRadius = computed.borderRadius;
+            replacement.style.backgroundColor = computed.backgroundColor;
+            replacement.style.color = computed.color;
+            replacement.style.fontFamily = computed.fontFamily;
+            replacement.style.fontSize = computed.fontSize;
+            replacement.style.fontWeight = computed.fontWeight;
+            replacement.style.textAlign = computed.textAlign;
+            replacement.style.direction = computed.direction;
+            replacement.style.whiteSpace = isTextarea ? 'pre-wrap' : 'nowrap';
+            replacement.style.overflow = 'hidden';
+
+            if (clonedControl.parentNode) {
+              clonedControl.parentNode.replaceChild(replacement, clonedControl);
+            }
+          }
         },
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -468,6 +557,58 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
             style={{ minHeight: '1050px' }}
             dir="rtl"
           >
+            {/* Scoped CSS strictly limited to this Cancellation Notice form */}
+            <style>{`
+              @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&display=swap');
+              
+              #cancellation-paper-container .cancellation-urdu-main-heading {
+                font-family: 'Noto Naskh Arabic', 'Amiri', 'Noto Sans Arabic', serif !important;
+                line-height: 1.6 !important;
+                display: block !important;
+                text-align: center !important;
+                letter-spacing: 0 !important;
+              }
+
+              #cancellation-paper-container input,
+              #cancellation-paper-container select,
+              #cancellation-paper-container textarea {
+                box-sizing: border-box !important;
+                vertical-align: middle !important;
+              }
+
+              #cancellation-paper-container .cancellation-field-input {
+                padding: 6px 12px;
+                line-height: 1.8;
+                min-height: 38px !important;
+              }
+
+              #cancellation-paper-container .cancellation-field-input.py-0 {
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                line-height: 2.7 !important;
+              }
+
+              #cancellation-paper-container .leading-\[2\.7\],
+              #cancellation-paper-container .cancellation-field-input.leading-\[2\.7\] {
+                line-height: 2.7 !important;
+              }
+
+              #cancellation-paper-container .cancellation-field-textarea {
+                padding: 8px 12px !important;
+                line-height: 1.9 !important;
+                min-height: 56px !important;
+              }
+
+              #cancellation-paper-container .cancellation-inline-field {
+                padding: 4px 10px !important;
+                min-height: 34px !important;
+                line-height: 1.8 !important;
+                vertical-align: middle !important;
+                display: inline-block !important;
+                margin: 0 4px !important;
+              }
+            `}</style>
+
             {/* Optional Header Branding Logo Bar */}
             <div className="flex items-center justify-between border-b-2 border-emerald-900/60 pb-3 mb-5">
               <div className="flex items-center gap-3">
@@ -493,63 +634,63 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
               </div>
             </div>
 
-            {/* Title (Notice on right side, smaller font, corrected spelling) */}
-            <div className="text-center pt-5 sm:pt-7 pb-2 mb-3">
-              <h1 className="text-2xl sm:text-3xl font-black text-rose-700 font-urdu tracking-wide inline-flex items-center justify-center flex-wrap gap-2">
-                <span className="text-xs sm:text-sm font-semibold font-sans text-rose-700 tracking-normal" dir="ltr">
-                  (Cancellation Notice)
-                </span>
-                <span>کینسلیشن نوٹس</span>
+            {/* Title (Centered Urdu heading with small bracket text below and generous line height) */}
+            <div className="text-center pt-5 sm:pt-7 pb-2 mb-4">
+              <h1 className="text-xl sm:text-2xl font-black text-rose-700 tracking-wide cancellation-urdu-main-heading text-center mx-auto">
+                کینسلیشن نوٹس
               </h1>
+              <div className="text-xs sm:text-[13px] font-semibold font-sans text-rose-700 tracking-normal mt-1 leading-[2.5] text-center" dir="ltr">
+                (Cancellation Notice)
+              </div>
             </div>
 
-            {/* Subject and Date Row (Padding increased, red line removed) */}
+            {/* Subject and Date Row (Spacious layout, no clipping, proper padding) */}
             <div className="flex flex-wrap items-center justify-between gap-4 py-3 sm:py-4 px-1 my-3 text-xs sm:text-sm font-bold">
-              <div className="flex items-center gap-2">
-                <span className="text-rose-700 font-urdu text-sm sm:text-base">موضوع:</span>
+              <div className="flex items-center gap-2.5">
+                <span className="text-rose-700 font-urdu text-sm sm:text-base shrink-0">موضوع:</span>
                 <input
                   type="text"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="border-b border-slate-400 font-urdu font-black text-rose-800 text-xs sm:text-sm focus:outline-hidden focus:border-rose-600 px-2 py-0.5 w-64 sm:w-80 bg-slate-50/50 rounded-xs"
+                  className="cancellation-field-input border-b-2 border-slate-400 font-urdu font-black text-rose-800 text-xs sm:text-sm focus:outline-hidden focus:border-rose-600 w-64 sm:w-80 bg-slate-50/70 rounded-xs py-0 leading-[2.7]"
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-slate-700 font-urdu text-sm sm:text-base">مورخہ:</span>
+              <div className="flex items-center gap-2.5">
+                <span className="text-slate-700 font-urdu text-sm sm:text-base shrink-0">مورخہ:</span>
                 <input
                   type="text"
                   value={noticeDate}
                   onChange={(e) => setNoticeDate(e.target.value)}
-                  className="border-b border-slate-400 font-mono font-bold text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-rose-600 px-2 py-0.5 w-32 bg-slate-50/50 rounded-xs text-center"
+                  className="cancellation-field-input border-b-2 border-slate-400 font-mono font-bold text-slate-800 text-xs sm:text-sm focus:outline-hidden focus:border-rose-600 w-36 bg-slate-50/70 rounded-xs text-center"
                 />
               </div>
             </div>
 
-            {/* Recipient Details Block */}
-            <div className="space-y-3.5 my-6 text-xs sm:text-sm font-semibold text-slate-800">
-              <div className="flex flex-wrap items-center gap-2">
+            {/* Recipient Details Block (Generous padding, clear visibility, no overlap) */}
+            <div className="space-y-4 my-6 text-xs sm:text-sm font-semibold text-slate-800">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <select
                   value={salutation}
                   onChange={(e) => setSalutation(e.target.value as any)}
-                  className="font-urdu font-black text-slate-900 border-b border-slate-300 bg-transparent py-0.5 focus:outline-hidden"
+                  className="cancellation-field-input font-urdu font-black text-slate-900 border-b-2 border-slate-400 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 cursor-pointer py-0 leading-[2.7]"
                 >
                   <option value="محترم جناب">محترم جناب</option>
                   <option value="محترمہ">محترمہ</option>
                 </select>
-                <span className="font-urdu">:</span>
+                <span className="font-urdu text-slate-800 font-bold px-0.5">:</span>
                 <input
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="محمد رضوان شفیع صاحب"
-                  className="font-urdu font-black text-slate-900 border-b border-slate-400 px-2 py-0.5 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[200px] bg-slate-50/50 rounded-xs"
+                  className="cancellation-field-input font-urdu font-black text-slate-900 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[200px] bg-slate-50/70 rounded-xs py-0 leading-[2.7]"
                 />
 
                 <select
                   value={relationType}
                   onChange={(e) => setRelationType(e.target.value as any)}
-                  className="font-urdu font-bold text-slate-800 border-b border-slate-300 bg-transparent py-0.5 focus:outline-hidden mr-2"
+                  className="cancellation-field-input font-urdu font-bold text-slate-800 border-b-2 border-slate-400 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 cursor-pointer mr-1 py-0 leading-[2.7]"
                 >
                   <option value="ولد">ولد :</option>
                   <option value="زوجہ">زوجہ :</option>
@@ -560,35 +701,35 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
                   value={fatherOrHusbandName}
                   onChange={(e) => setFatherOrHusbandName(e.target.value)}
                   placeholder="محمد شفیع صاحب"
-                  className="font-urdu font-bold text-slate-800 border-b border-slate-400 px-2 py-0.5 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[180px] bg-slate-50/50 rounded-xs"
+                  className="cancellation-field-input font-urdu font-bold text-slate-800 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[180px] bg-slate-50/70 rounded-xs py-0 leading-[2.7]"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-urdu font-bold text-slate-800 min-w-[120px]">شناختی کارڈ نمبر:</span>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <span className="font-urdu font-bold text-slate-800 min-w-[125px] shrink-0">شناختی کارڈ نمبر:</span>
                 <input
                   type="text"
                   value={cnic}
                   onChange={(e) => setCnic(e.target.value)}
                   placeholder="42401-0513794-9"
                   dir="ltr"
-                  className="font-mono font-bold text-slate-900 border-b border-slate-400 px-2 py-0.5 focus:outline-hidden focus:border-rose-600 w-52 bg-slate-50/50 rounded-xs text-left"
+                  className="cancellation-field-input font-mono font-bold text-slate-900 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 w-56 bg-slate-50/70 rounded-xs text-left"
                 />
                 {mobile && (
-                  <span className="text-[11px] font-mono text-slate-500 mr-2" dir="ltr">
+                  <span className="text-xs font-mono text-slate-500 mr-2" dir="ltr">
                     (Mob: {mobile})
                   </span>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-start gap-2">
-                <span className="font-urdu font-bold text-slate-800 min-w-[120px] pt-1">رہائشی پتہ:</span>
+              <div className="flex flex-wrap items-start gap-2 sm:gap-3">
+                <span className="font-urdu font-bold text-slate-800 min-w-[125px] pt-2 shrink-0">رہائشی پتہ:</span>
                 <textarea
                   rows={2}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="مکان نمبر 580 سیکٹر نمبر 11 محلہ الخضرا سوسائٹی اورنگی ٹاؤن کراچی۔"
-                  className="font-urdu font-bold text-slate-800 border-b border-slate-400 px-2 py-0.5 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[280px] bg-slate-50/50 rounded-xs resize-none"
+                  className="cancellation-field-textarea font-urdu font-bold text-slate-800 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[280px] bg-slate-50/70 rounded-xs resize-none"
                 />
               </div>
             </div>
@@ -599,14 +740,14 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
             </div>
 
             {/* Body Paragraph 1 (Direct from PDF) */}
-            <div className="my-5 font-urdu text-sm sm:text-base leading-[2.2] text-slate-900 text-justify">
+            <div className="my-6 font-urdu text-sm sm:text-base leading-[2.5] text-slate-900 text-justify">
               <span>آپ کو مطلع کیا جاتا ہے کہ آپ نے عمرہ کمیٹی میں </span>
               <input
                 type="text"
                 inputMode="numeric"
                 value={planMonths}
                 onChange={(e) => handlePlanMonthsChange(Number(e.target.value) || 0)}
-                className="w-16 mx-1.5 px-2 py-0.5 border-b border-slate-400 font-mono font-bold text-slate-900 text-center bg-slate-50/50 rounded-xs focus:outline-hidden focus:border-rose-600 inline-block"
+                className="cancellation-inline-field w-16 border-b-2 border-slate-400 font-mono font-bold text-slate-900 text-center bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600"
               />
               <span> قسطوں پر مشتمل شرکت کے لیے رجسٹریشن کروائی تھی۔ آپ نے پہلی قسط کی رقم </span>
               <input
@@ -614,7 +755,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
                 inputMode="numeric"
                 value={firstInstallmentPaidAmount}
                 onChange={(e) => setFirstInstallmentPaidAmount(Number(e.target.value) || 0)}
-                className="w-24 mx-1.5 px-2 py-0.5 border-b border-slate-400 font-mono font-bold text-slate-900 text-center bg-slate-50/50 rounded-xs focus:outline-hidden focus:border-rose-600 inline-block"
+                className="cancellation-inline-field w-24 border-b-2 border-slate-400 font-mono font-bold text-slate-900 text-center bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600"
               />
               <span> روپے جمع کروائی، مگر اس کے بعد باقی </span>
               <input
@@ -622,20 +763,20 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
                 inputMode="numeric"
                 value={remainingInstallmentsCount}
                 onChange={(e) => setRemainingInstallmentsCount(Number(e.target.value) || 0)}
-                className="w-16 mx-1.5 px-2 py-0.5 border-b border-slate-400 font-mono font-bold text-slate-900 text-center bg-slate-50/50 rounded-xs focus:outline-hidden focus:border-rose-600 inline-block"
+                className="cancellation-inline-field w-16 border-b-2 border-slate-400 font-mono font-bold text-slate-900 text-center bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600"
               />
               <span> قسطیں مقررہ وقت پر ادا نہیں کی گئیں۔</span>
             </div>
 
             {/* Body Paragraph 2 (Direct from PDF) */}
-            <div className="my-5 font-urdu text-sm sm:text-base leading-[2.2] text-slate-900 text-justify">
+            <div className="my-6 font-urdu text-sm sm:text-base leading-[2.5] text-slate-900 text-justify">
               <span>چونکہ مقررہ وقت گزرنے کے باوجود ادائیگی نہیں کی گئی، اس لیے کمیٹی قواعد و ضوابط کے تحت آپ کی ممبرشپ منسوخ کی جاتی ہے۔ اس سلسلے میں آپ کو جمع شدہ رقم </span>
               <input
                 type="text"
                 value={refundAmountWords}
                 onChange={(e) => setRefundAmountWords(e.target.value)}
                 placeholder="پانچ ہزار روپے"
-                className="mx-1.5 px-2 py-0.5 border-b border-slate-400 font-urdu font-bold text-slate-900 bg-slate-50/50 rounded-xs focus:outline-hidden focus:border-rose-600 inline-block min-w-[140px] text-center"
+                className="cancellation-inline-field border-b-2 border-slate-400 font-urdu font-bold text-slate-900 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 min-w-[150px] text-center"
               />
               <span> (Rs. </span>
               <input
@@ -643,15 +784,15 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
                 inputMode="numeric"
                 value={refundAmount}
                 onChange={(e) => handleRefundAmountChange(Number(e.target.value) || 0)}
-                className="w-24 mx-1 px-2 py-0.5 border-b border-slate-400 font-mono font-bold text-slate-900 bg-slate-50/50 rounded-xs focus:outline-hidden focus:border-rose-600 inline-block text-center"
+                className="cancellation-inline-field w-28 border-b-2 border-slate-400 font-mono font-bold text-slate-900 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 text-center"
               />
               <span>) بطور ریفنڈ واپس کی جا چکی ہے۔</span>
             </div>
 
             {/* Body Paragraph 3 (Direct from PDF with red highlight on Cancellation Notes) */}
-            <div className="my-5 font-urdu text-sm sm:text-base leading-[2.2] text-slate-900 text-justify">
+            <div className="my-6 font-urdu text-sm sm:text-base leading-[2.5] text-slate-900 text-justify">
               <span>یہ </span>
-              <span className="text-rose-700 font-black px-1 underline decoration-rose-500 underline-offset-4">
+              <span className="text-rose-700 font-black px-1.5 underline decoration-rose-500 underline-offset-4">
                 کینسلیشن نوٹس
               </span>
               <span> اس بات کی تصدیق ہے کہ اب آپ عمرہ کمیٹی کی ممبرشپ میں شامل نہیں ہیں اور اس کمیٹی کے کسی بھی فائدے یا ذمہ داری کے حقدار نہیں رہے۔</span>
