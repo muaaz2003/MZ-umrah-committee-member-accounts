@@ -166,6 +166,42 @@ export interface CancellationNotice {
   createdAt: string;
 }
 
+export interface QarzaHasanaAgreement {
+  id: string;
+  agreementNumber: string; // e.g. "MZA-QARZ-001"
+  memberId?: string;
+  memberNumber?: string;
+  salutation: 'محترم جناب' | 'محترمہ';
+  fullName: string;
+  relationType: 'ولد' | 'زوجہ' | 'بنت';
+  fatherOrHusbandName: string;
+  cnic: string;
+  mobile: string;
+  address: string;
+  agreementDate: string; // YYYY-MM-DD
+  loanAmount: number; // default 20,000
+  loanAmountWordsUrdu: string; // "بیس ہزار روپے"
+  monthlyReturnAmount: number; // default 10,000
+  monthlyReturnAmountWordsUrdu: string; // "دس ہزار روپے"
+  repaymentDurationMonths: number; // default 2
+  paidReturnAmount: number; // amount paid back so far
+  remainingReturnAmount: number; // loanAmount - paidReturnAmount
+  status: 'Active' | 'Repaid' | 'Defaulted';
+  // Guarantor details (ضامن کی تفصیلات)
+  guarantorName: string;
+  guarantorRelationType: 'ولد' | 'زوجہ' | 'بنت';
+  guarantorFatherName: string;
+  guarantorCnic: string;
+  guarantorMobile: string;
+  guarantorAddress?: string;
+  // Official / Signatures
+  issuedBy: string;
+  signatoryName: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface FinancialSummary {
   totalCommitteeAmount: number;
   totalPaidAmount: number;

@@ -48,6 +48,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Qarza-e-Hasana agreements collection
+    match /qarzaHasana/{agreementId} {
+      allow read, write: if true;
+    }
+
     // Audit logs
     match /auditLogs/{logId} {
       allow read, create: if true;

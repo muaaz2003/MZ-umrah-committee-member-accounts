@@ -293,17 +293,17 @@ export const CancellationsPage: React.FC<CancellationsPageProps> = ({
             <table className="w-full text-xs text-left text-slate-600" dir="rtl">
               <thead className="text-[11px] uppercase bg-slate-50 text-slate-700 border-b border-slate-200 font-bold">
                 <tr>
-                  <th className="py-3.5 px-4 text-right">نوٹس نمبر (Notice #)</th>
-                  <th className="py-3.5 px-4 text-right">تاریخ</th>
-                  <th className="py-3.5 px-4 text-right">ممبر کا نام و شناختی کارڈ</th>
-                  <th className="py-3.5 px-4 text-right">کمیٹی پلان</th>
-                  <th className="py-3.5 px-4 text-right">ادا شدہ / باقی اقساط</th>
-                  <th className="py-3.5 px-4 text-right">واپس شدہ رقم</th>
-                  <th className="py-3.5 px-4 text-right">موجودہ اسٹیٹس</th>
-                  <th className="py-3.5 px-4 text-center">ایکشنز (Actions)</th>
+                  <th className="py-4 px-5 text-right">نوٹس نمبر (Notice #)</th>
+                  <th className="py-4 px-5 text-right">تاریخ</th>
+                  <th className="py-4 px-5 text-right">ممبر کا نام و شناختی کارڈ</th>
+                  <th className="py-4 px-5 text-right">کمیٹی پلان</th>
+                  <th className="py-4 px-5 text-right">ادا شدہ / باقی اقساط</th>
+                  <th className="py-4 px-5 text-right">واپس شدہ رقم</th>
+                  <th className="py-4 px-5 text-right">موجودہ اسٹیٹس</th>
+                  <th className="py-4 px-5 text-center">ایکشنز (Actions)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredCancellations.map((item) => {
                   const linkedMember = members.find(
                     (m) =>
@@ -315,54 +315,54 @@ export const CancellationsPage: React.FC<CancellationsPageProps> = ({
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-rose-700 text-right" dir="ltr">
+                      <td className="py-3.5 px-5 font-mono font-bold text-rose-700 text-right" dir="ltr">
                         {item.noticeNumber}
                       </td>
-                      <td className="py-3 px-4 font-mono text-slate-600 text-right" dir="ltr">
+                      <td className="py-3.5 px-5 font-mono text-slate-600 text-right" dir="ltr">
                         {item.noticeDate}
                       </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="font-bold text-slate-900 font-urdu text-sm">
+                      <td className="py-3.5 px-5 text-right">
+                        <div className="font-bold text-slate-900 text-sm leading-snug">
                           {item.salutation} {item.fullName}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-urdu">
+                        <div className="text-[11px] text-slate-600 mt-1 font-medium">
                           {item.relationType}: {item.fatherOrHusbandName}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-500" dir="ltr">
+                        <div className="text-[10px] font-mono text-slate-400 mt-1" dir="ltr">
                           CNIC: {item.cnic}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3.5 px-5 text-right">
                         <span className="font-bold text-slate-800">
                           {item.planMonths || 24} ماہ پلان
                         </span>
-                        <div className="text-[10px] text-slate-400 font-mono">
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">
                           (Rs. {item.installmentAmount?.toLocaleString() || 5000}/mo)
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3.5 px-5 text-right">
                         <div className="text-slate-800 font-medium">
                           ادا شدہ: <strong>{item.paidInstallmentsCount || 1}</strong>
                         </div>
-                        <div className="text-rose-700 text-[10px]">
+                        <div className="text-rose-700 text-[10px] mt-0.5">
                           باقی: <strong>{item.remainingInstallmentsCount ?? 23}</strong>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-right font-black text-rose-700">
+                      <td className="py-3.5 px-5 text-right font-black text-rose-700 text-sm">
                         {formatPKR(item.refundAmount || 0)}
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3.5 px-5 text-right">
                         {isAlreadyActive ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-block">
                             بحال شدہ (Active)
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 inline-block">
                             منسوخ (Cancelled)
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3.5 px-5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           {/* Restore Button */}
                           {!isAlreadyActive && (

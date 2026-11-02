@@ -153,6 +153,43 @@
         "createdAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["user", "action", "date", "recordType"]
+    },
+    "QarzaHasanaAgreement": {
+      "title": "QarzaHasanaAgreement",
+      "description": "Interest-free loan agreement (عہد نامہ برائے قرضِ حسنہ) for members",
+      "type": "object",
+      "properties": {
+        "agreementNumber": { "type": "string", "maxLength": 50 },
+        "memberId": { "type": "string", "maxLength": 100 },
+        "memberNumber": { "type": "string", "maxLength": 50 },
+        "salutation": { "type": "string", "enum": ["محترم جناب", "محترمہ"] },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "relationType": { "type": "string", "enum": ["ولد", "زوجہ", "بنت"] },
+        "fatherOrHusbandName": { "type": "string", "maxLength": 100 },
+        "cnic": { "type": "string", "maxLength": 30 },
+        "mobile": { "type": "string", "maxLength": 30 },
+        "address": { "type": "string", "maxLength": 250 },
+        "agreementDate": { "type": "string", "maxLength": 30 },
+        "loanAmount": { "type": "number" },
+        "loanAmountWordsUrdu": { "type": "string", "maxLength": 100 },
+        "monthlyReturnAmount": { "type": "number" },
+        "monthlyReturnAmountWordsUrdu": { "type": "string", "maxLength": 100 },
+        "repaymentDurationMonths": { "type": "number" },
+        "paidReturnAmount": { "type": "number" },
+        "remainingReturnAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Active", "Repaid", "Defaulted"] },
+        "guarantorName": { "type": "string", "maxLength": 100 },
+        "guarantorRelationType": { "type": "string", "enum": ["ولد", "زوجہ", "بنت"] },
+        "guarantorFatherName": { "type": "string", "maxLength": 100 },
+        "guarantorCnic": { "type": "string", "maxLength": 30 },
+        "guarantorMobile": { "type": "string", "maxLength": 30 },
+        "guarantorAddress": { "type": "string", "maxLength": 250 },
+        "issuedBy": { "type": "string", "maxLength": 100 },
+        "signatoryName": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["agreementNumber", "fullName", "cnic", "loanAmount", "monthlyReturnAmount", "guarantorName", "guarantorCnic", "status"]
     }
   },
   "firestore": {
@@ -175,6 +212,14 @@
     "/refunds/{refundId}": {
       "schema": "Refund",
       "description": "Collection of member refunds"
+    },
+    "/cancellations/{cancellationId}": {
+      "schema": "CancellationNotice",
+      "description": "Collection of member cancellation notices"
+    },
+    "/qarzaHasana/{agreementId}": {
+      "schema": "QarzaHasanaAgreement",
+      "description": "Collection of interest-free loan agreements (قرضِ حسنہ)"
     },
     "/settings/{settingId}": {
       "schema": "Setting",

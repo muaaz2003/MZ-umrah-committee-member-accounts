@@ -6,6 +6,7 @@ import {
   Installment,
   Refund,
   CancellationNotice,
+  QarzaHasanaAgreement,
   AuditLog,
   CommitteeSettings,
   AuthUser,
@@ -18,6 +19,7 @@ import {
   getAllInstallments,
   getAllRefunds,
   getAllCancellations,
+  getAllQarzaAgreements,
   getAllAuditLogs,
   getSettings,
   saveSettings,
@@ -48,6 +50,7 @@ import { DueInstallmentsPage } from './pages/DueInstallmentsPage';
 import { ReceiptsListPage } from './pages/ReceiptsListPage';
 import { RefundsPage } from './pages/RefundsPage';
 import { CancellationsPage } from './pages/CancellationsPage';
+import { QarzaHasanaPage } from './pages/QarzaHasanaPage';
 import { RegistrationFeesPage } from './pages/RegistrationFeesPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
@@ -107,6 +110,7 @@ export function App() {
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [cancellations, setCancellations] = useState<CancellationNotice[]>([]);
+  const [qarzaAgreements, setQarzaAgreements] = useState<QarzaHasanaAgreement[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [settings, setSettingsState] = useState<CommitteeSettings>(() => {
     try {
@@ -164,6 +168,7 @@ export function App() {
         installmentsResult,
         refundsResult,
         cancellationsResult,
+        qarzaResult,
         auditLogsResult,
         settingsResult,
       ] = await Promise.allSettled([
@@ -173,6 +178,7 @@ export function App() {
         getAllInstallments(),
         getAllRefunds(),
         getAllCancellations(),
+        getAllQarzaAgreements(),
         getAllAuditLogs(),
         getSettings(),
       ]);
@@ -183,6 +189,7 @@ export function App() {
       const installmentsData = installmentsResult.status === 'fulfilled' && installmentsResult.value ? installmentsResult.value : [];
       const refundsData = refundsResult.status === 'fulfilled' && refundsResult.value ? refundsResult.value : [];
       const cancellationsData = cancellationsResult.status === 'fulfilled' && cancellationsResult.value ? cancellationsResult.value : [];
+      const qarzaData = qarzaResult.status === 'fulfilled' && qarzaResult.value ? qarzaResult.value : [];
       const auditLogsData = auditLogsResult.status === 'fulfilled' && auditLogsResult.value ? auditLogsResult.value : [];
       const settingsData = settingsResult.status === 'fulfilled' && settingsResult.value ? settingsResult.value : null;
 
@@ -199,6 +206,7 @@ export function App() {
       setInstallments(installmentsData);
       setRefunds(refundsData);
       setCancellations(cancellationsData);
+      setQarzaAgreements(qarzaData);
       setAuditLogs(auditLogsData);
       if (settingsData) {
         setSettingsState(settingsData);
@@ -697,6 +705,14 @@ export function App() {
               members={members}
               currentUserEmail={currentUser.email}
               onRestoreMember={handleRestoreMemberToActive}
+              onRefresh={() => loadAllData(false)}
+            />
+          ) : currentPage === 'qarza-hasana' ? (
+            /* Qarza-e-Hasana Loan Agreement & Ledger */
+            <QarzaHasanaPage
+              agreements={qarzaAgreements}
+              members={members}
+              currentUserEmail={currentUser.email}
               onRefresh={() => loadAllData(false)}
             />
           ) : currentPage === 'registration-fees' ? (

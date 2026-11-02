@@ -20,6 +20,7 @@ import {
   Receipt,
   Refund,
   CancellationNotice,
+  QarzaHasanaAgreement,
   CommitteeSettings,
   AuditLog,
   PaymentMethod,
@@ -1447,6 +1448,110 @@ export async function deleteCancellationNotice(
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// -------------------------------------------------------------
+// QARZA-E-HASANA (INTEREST-FREE LOAN) AGREEMENTS
+// -------------------------------------------------------------
+export async function recordQarzaAgreement(
+  data: Omit<QarzaHasanaAgreement, 'id' | 'createdAt'>,
+  userEmail: string = 'admin'
+): Promise<QarzaHasanaAgreement> {
+  const qarId = `qarz_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+
+  const agreementRecord: QarzaHasanaAgreement = {
+    ...data,
+    id: qarId,
+    paidReturnAmount: data.paidReturnAmount || 0,
+    remainingReturnAmount: data.remainingReturnAmount !== undefined ? data.remainingReturnAmount : data.loanAmount,
+    status: data.status || 'Active',
+    createdAt: now,
+  };
+
+  const path = `qarzaHasana/${qarId}`;
+  try {
+    await setDoc(doc(db, 'qarzaHasana', qarId), agreementRecord);
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'ISSUE_QARZA_HASANA',
+      'QarzaHasana',
+      qarId,
+      `Issued Qarza-e-Hasana agreement #${data.agreementNumber} for ${data.fullName} (${data.cnic}). Loan Amount: Rs. ${data.loanAmount}, Monthly Return: Rs. ${data.monthlyReturnAmount}. Guarantor: ${data.guarantorName} (${data.guarantorCnic}).`
+    );
+    return agreementRecord;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function getAllQarzaAgreements(): Promise<QarzaHasanaAgreement[]> {
+  const path = 'qarzaHasana';
+  try {
+    const snap = await getDocs(query(collection(db, path), orderBy('createdAt', 'desc')));
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as QarzaHasanaAgreement) }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+  }
+}
+
+export async function deleteQarzaAgreement(
+  id: string,
+  userEmail: string = 'admin'
+): Promise<void> {
+  const path = `qarzaHasana/${id}`;
+  try {
+    await deleteDoc(doc(db, 'qarzaHasana', id));
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'DELETE_QARZA_HASANA',
+      'QarzaHasana',
+      id,
+      `Deleted Qarza-e-Hasana agreement record #${id}`
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function recordQarzaRepayment(
+  agreementId: string,
+  repaymentAmount: number,
+  userEmail: string = 'admin',
+  notes?: string
+): Promise<void> {
+  const path = `qarzaHasana/${agreementId}`;
+  try {
+    const docRef = doc(db, 'qarzaHasana', agreementId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) throw new Error('Qarza-e-Hasana record not found');
+    const existing = snap.data() as QarzaHasanaAgreement;
+
+    const newPaid = (existing.paidReturnAmount || 0) + repaymentAmount;
+    const newRemaining = Math.max(0, existing.loanAmount - newPaid);
+    const newStatus = newRemaining <= 0 ? ('Repaid' as const) : ('Active' as const);
+
+    await updateDoc(docRef, {
+      paidReturnAmount: newPaid,
+      remainingReturnAmount: newRemaining,
+      status: newStatus,
+      updatedAt: new Date().toISOString(),
+      ...(notes ? { notes: `${existing.notes ? existing.notes + ' | ' : ''}${notes}` } : {}),
+    });
+
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'REPAY_QARZA_HASANA',
+      'QarzaHasana',
+      agreementId,
+      `Recorded return payment of Rs. ${repaymentAmount} for Qarza-e-Hasana #${existing.agreementNumber} (${existing.fullName}). Total Returned: Rs. ${newPaid}, Remaining: Rs. ${newRemaining}. Status: ${newStatus}.`
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 

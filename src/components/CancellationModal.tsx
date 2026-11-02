@@ -242,119 +242,186 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
   };
 
   // PDF Export
-  // PDF Export (Same as screen, zero text or layout shifts)
+  // PDF Export (Deterministic full page fit, zero bottom clipping on both desktop and mobile)
   const handleDownloadPdf = async () => {
     if (!printNoticeRef.current) return;
     setIsDownloadingPdf(true);
     setStatusMessage(null);
 
+    let stagingContainer: HTMLDivElement | null = null;
+
     try {
       const element = printNoticeRef.current;
-      const targetWidth = element.offsetWidth > 0 ? element.offsetWidth : 760;
+      const A4_LAYOUT_WIDTH = 800;
 
-      const canvas = await html2canvas(element, {
+      // 1. Create a dedicated off-screen staging container attached to body
+      // This isolates the PDF generation completely from the modal's scroll/overflow boundaries and mobile screen widths
+      stagingContainer = document.createElement('div');
+      stagingContainer.id = 'cancellation-pdf-staging-root';
+      stagingContainer.style.position = 'fixed';
+      stagingContainer.style.top = '0';
+      stagingContainer.style.left = '0';
+      stagingContainer.style.width = `${A4_LAYOUT_WIDTH}px`;
+      stagingContainer.style.maxWidth = `${A4_LAYOUT_WIDTH}px`;
+      stagingContainer.style.minWidth = `${A4_LAYOUT_WIDTH}px`;
+      stagingContainer.style.backgroundColor = '#ffffff';
+      stagingContainer.style.zIndex = '-9999';
+      stagingContainer.style.opacity = '1';
+      stagingContainer.style.pointerEvents = 'none';
+      stagingContainer.style.overflow = 'visible';
+      stagingContainer.style.boxSizing = 'border-box';
+
+      // 2. Clone the notice element
+      const clone = element.cloneNode(true) as HTMLElement;
+      clone.id = 'cancellation-paper-container';
+      clone.style.width = `${A4_LAYOUT_WIDTH}px`;
+      clone.style.minWidth = `${A4_LAYOUT_WIDTH}px`;
+      clone.style.maxWidth = `${A4_LAYOUT_WIDTH}px`;
+      clone.style.height = 'auto';
+      clone.style.minHeight = 'auto';
+      clone.style.maxHeight = 'none';
+      clone.style.overflow = 'visible';
+      clone.style.margin = '0 auto';
+      clone.style.padding = '36px 44px';
+      clone.style.boxSizing = 'border-box';
+      clone.style.boxShadow = 'none';
+      clone.style.border = '1px solid #cbd5e1';
+      clone.style.backgroundColor = '#ffffff';
+
+      // Inject PDF-specific fonts and baseline styles
+      const fontStyle = document.createElement('style');
+      fontStyle.textContent = `
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .pdf-cloned-control-replacement {
+          box-sizing: border-box !important;
+          letter-spacing: 0px !important;
+          word-break: break-word !important;
+        }
+        .cancellation-urdu-main-heading {
+          font-family: 'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif !important;
+          letter-spacing: 0px !important;
+          word-spacing: normal !important;
+          font-feature-settings: "liga" 1, "calt" 1 !important;
+          line-height: 1.6 !important;
+          direction: rtl !important;
+          text-align: center !important;
+        }
+      `;
+      stagingContainer.appendChild(fontStyle);
+
+      // 3. Replace all input/select/textarea with static styled elements to ensure perfect baseline alignment and zero cut-off
+      const sourceControls = element.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea');
+      const cloneControls = clone.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea');
+
+      for (let i = 0; i < cloneControls.length; i++) {
+        const sourceControl = sourceControls[i];
+        const cloneControl = cloneControls[i];
+        if (!sourceControl || !cloneControl) continue;
+
+        const computed = window.getComputedStyle(sourceControl);
+        const isSelect = sourceControl.tagName.toLowerCase() === 'select';
+        const isTextarea = sourceControl.tagName.toLowerCase() === 'textarea';
+
+        let displayValue = '';
+        if (isSelect) {
+          const sel = sourceControl as HTMLSelectElement;
+          displayValue = sel.options[sel.selectedIndex]?.text || sel.value || '';
+        } else {
+          displayValue = (sourceControl as HTMLInputElement | HTMLTextAreaElement).value ?? '';
+        }
+
+        const replacement = document.createElement(isTextarea ? 'div' : 'span');
+        replacement.className = `${sourceControl.className} pdf-cloned-control-replacement`;
+        if (displayValue && displayValue.trim()) {
+          replacement.textContent = displayValue;
+        } else {
+          replacement.innerHTML = '&nbsp;';
+        }
+
+        replacement.style.boxSizing = 'border-box';
+        replacement.style.display = isTextarea ? 'block' : 'inline-block';
+        replacement.style.verticalAlign = 'middle';
+
+        if (isTextarea) {
+          replacement.style.width = '100%';
+          replacement.style.minHeight = '56px';
+        } else if (sourceControl.classList.contains('flex-1')) {
+          replacement.style.flex = '1 1 auto';
+        }
+
+        replacement.style.lineHeight = computed.lineHeight;
+        replacement.style.padding = computed.padding;
+        replacement.style.paddingTop = computed.paddingTop;
+        replacement.style.paddingBottom = computed.paddingBottom;
+        replacement.style.paddingLeft = computed.paddingLeft;
+        replacement.style.paddingRight = computed.paddingRight;
+        replacement.style.margin = computed.margin;
+        replacement.style.border = computed.border;
+        replacement.style.borderBottom = computed.borderBottom;
+        replacement.style.borderTop = computed.borderTop;
+        replacement.style.borderLeft = computed.borderLeft;
+        replacement.style.borderRight = computed.borderRight;
+        replacement.style.borderRadius = computed.borderRadius;
+        replacement.style.backgroundColor = computed.backgroundColor;
+        replacement.style.color = computed.color;
+        replacement.style.fontFamily = computed.fontFamily;
+        replacement.style.fontSize = computed.fontSize;
+        replacement.style.fontWeight = computed.fontWeight;
+        replacement.style.textAlign = computed.textAlign;
+        replacement.style.direction = computed.direction;
+        replacement.style.whiteSpace = isTextarea ? 'pre-wrap' : 'nowrap';
+        replacement.style.overflow = 'hidden';
+
+        if (cloneControl.parentNode) {
+          cloneControl.parentNode.replaceChild(replacement, cloneControl);
+        }
+      }
+
+      // Explicitly format heading in the clone so Arabic ligatures remain perfectly connected
+      const cloneH1 = clone.querySelector('.cancellation-urdu-main-heading') as HTMLElement;
+      if (cloneH1) {
+        cloneH1.style.fontFamily = "'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif";
+        cloneH1.style.letterSpacing = '0px';
+        cloneH1.style.wordSpacing = 'normal';
+        cloneH1.style.lineHeight = '1.6';
+        cloneH1.style.direction = 'rtl';
+        cloneH1.style.textAlign = 'center';
+      }
+
+      stagingContainer.appendChild(clone);
+      document.body.appendChild(stagingContainer);
+
+      // Wait for fonts to be ready
+      if (document.fonts) {
+        try {
+          await document.fonts.ready;
+        } catch {
+          // ignore font readiness error
+        }
+      }
+
+      // Small tick for layout calculation
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      // Calculate the true rendered height of the complete form document
+      const fullContentHeight = Math.ceil(
+        Math.max(clone.getBoundingClientRect().height, clone.scrollHeight, clone.offsetHeight)
+      );
+
+      const canvas = await html2canvas(clone, {
         scale: 2.5,
         useCORS: true,
-        scrollY: 0,
-        backgroundColor: '#ffffff',
         logging: false,
-        onclone: async (clonedDoc, clonedEl) => {
-          clonedEl.style.width = `${targetWidth}px`;
-          clonedEl.style.maxWidth = `${targetWidth}px`;
-          clonedEl.style.minWidth = `${targetWidth}px`;
-          clonedEl.style.boxSizing = 'border-box';
-          clonedEl.style.margin = '0 auto';
-
-          // Inject fonts
-          const fontStyle = clonedDoc.createElement('style');
-          fontStyle.textContent = `
-            @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .pdf-cloned-control-replacement {
-              box-sizing: border-box !important;
-              letter-spacing: 0 !important;
-              word-break: break-word !important;
-            }
-          `;
-          clonedDoc.head.appendChild(fontStyle);
-
-          if (clonedDoc.fonts) {
-            try {
-              await clonedDoc.fonts.ready;
-            } catch {
-              // Font ready fallback
-            }
-          }
-
-          // Replace form controls with exact static styled elements
-          // This completely prevents browser input/select rendering shifts in html2canvas
-          const clonedControls = clonedEl.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea');
-          const sourceControls = element.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea');
-
-          for (let i = 0; i < clonedControls.length; i++) {
-            const clonedControl = clonedControls[i];
-            const sourceControl = sourceControls[i];
-            if (!clonedControl || !sourceControl) continue;
-
-            const computed = window.getComputedStyle(sourceControl);
-            const isSelect = sourceControl.tagName.toLowerCase() === 'select';
-            const isTextarea = sourceControl.tagName.toLowerCase() === 'textarea';
-
-            let displayValue = '';
-            if (isSelect) {
-              const sel = sourceControl as HTMLSelectElement;
-              displayValue = sel.options[sel.selectedIndex]?.text || sel.value || '';
-            } else {
-              displayValue = (sourceControl as HTMLInputElement | HTMLTextAreaElement).value ?? '';
-            }
-
-            const replacement = clonedDoc.createElement(isTextarea ? 'div' : 'span');
-            replacement.className = `${sourceControl.className} pdf-cloned-control-replacement`;
-            replacement.textContent = displayValue;
-
-            // Preserve dimensions and display model exactly
-            replacement.style.boxSizing = 'border-box';
-            replacement.style.display = isTextarea ? 'block' : 'inline-block';
-            replacement.style.verticalAlign = computed.verticalAlign;
-
-            const measuredWidth = sourceControl.offsetWidth > 0 ? `${sourceControl.offsetWidth}px` : computed.width;
-            replacement.style.width = measuredWidth;
-            replacement.style.minWidth = computed.minWidth;
-            replacement.style.maxWidth = computed.maxWidth;
-
-            const measuredHeight = sourceControl.offsetHeight > 0 ? `${sourceControl.offsetHeight}px` : computed.height;
-            replacement.style.height = measuredHeight;
-            replacement.style.minHeight = computed.minHeight;
-            replacement.style.lineHeight = computed.lineHeight;
-
-            // Match exact padding and borders
-            replacement.style.padding = computed.padding;
-            replacement.style.paddingTop = computed.paddingTop;
-            replacement.style.paddingBottom = computed.paddingBottom;
-            replacement.style.paddingLeft = computed.paddingLeft;
-            replacement.style.paddingRight = computed.paddingRight;
-            replacement.style.margin = computed.margin;
-            replacement.style.border = computed.border;
-            replacement.style.borderBottom = computed.borderBottom;
-            replacement.style.borderTop = computed.borderTop;
-            replacement.style.borderLeft = computed.borderLeft;
-            replacement.style.borderRight = computed.borderRight;
-            replacement.style.borderRadius = computed.borderRadius;
-            replacement.style.backgroundColor = computed.backgroundColor;
-            replacement.style.color = computed.color;
-            replacement.style.fontFamily = computed.fontFamily;
-            replacement.style.fontSize = computed.fontSize;
-            replacement.style.fontWeight = computed.fontWeight;
-            replacement.style.textAlign = computed.textAlign;
-            replacement.style.direction = computed.direction;
-            replacement.style.whiteSpace = isTextarea ? 'pre-wrap' : 'nowrap';
-            replacement.style.overflow = 'hidden';
-
-            if (clonedControl.parentNode) {
-              clonedControl.parentNode.replaceChild(replacement, clonedControl);
-            }
-          }
-        },
+        backgroundColor: '#ffffff',
+        width: A4_LAYOUT_WIDTH,
+        height: fullContentHeight,
+        windowWidth: 1200,
+        windowHeight: fullContentHeight + 300,
+        x: 0,
+        y: 0,
+        scrollX: 0,
+        scrollY: 0,
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
@@ -364,19 +431,36 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
         format: 'a4',
       });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pageWidth = pdf.internal.pageSize.getWidth(); // 210 mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 297 mm
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      // 6mm margins around the printable area
+      const margin = 6;
+      const printW = pageWidth - margin * 2; // 198 mm
+      const printH = pageHeight - margin * 2; // 285 mm
+
+      // Proportional scale to guarantee the entire height and width fit inside standard A4 without clipping
+      const scale = Math.min(printW / canvas.width, printH / canvas.height);
+      const renderW = canvas.width * scale;
+      const renderH = canvas.height * scale;
+
+      const xOffset = margin + (printW - renderW) / 2;
+      const yOffset = margin + (printH - renderH) / 2;
+
+      pdf.addImage(imgData, 'JPEG', xOffset, yOffset, renderW, renderH, undefined, 'FAST');
       const cleanName = (fullName || 'Member').replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
       pdf.save(`Cancellation-Notice-${noticeNumber}-${cleanName}.pdf`);
 
       setIsDownloadingPdf(false);
-      setStatusMessage({ type: 'success', text: 'پی ڈی ایف کامیابی سے ڈاؤنلوڈ ہو گئی۔' });
+      setStatusMessage({ type: 'success', text: 'پی ڈی ایف کامیابی سے ڈاؤنلوڈ ہو گئی۔ پورا صفحہ مکمل طور پر شامل ہے۔' });
     } catch (err) {
       console.error('PDF generation error:', err);
       setIsDownloadingPdf(false);
       setStatusMessage({ type: 'error', text: 'پی ڈی ایف جنریٹ کرنے میں غلطی ہوئی۔ برائے مہربانی دوبارہ کوشش کریں۔' });
+    } finally {
+      if (stagingContainer && stagingContainer.parentNode) {
+        document.body.removeChild(stagingContainer);
+      }
     }
   };
 
@@ -553,20 +637,23 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
           <div
             ref={printNoticeRef}
             id="cancellation-paper-container"
-            className="w-full max-w-[760px] mx-auto bg-white border border-slate-300 shadow-2xl p-6 sm:p-10 md:p-12 text-slate-900 leading-normal relative font-sans print:shadow-none print:border-none print:m-0 print:p-8"
-            style={{ minHeight: '1050px' }}
+            className="w-full max-w-[760px] mx-auto bg-white border border-slate-300 shadow-2xl p-4 sm:p-8 md:p-12 text-slate-900 leading-normal relative font-sans print:shadow-none print:border-none print:m-0 print:p-8 min-h-auto sm:min-h-[1050px]"
             dir="rtl"
           >
             {/* Scoped CSS strictly limited to this Cancellation Notice form */}
             <style>{`
               @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&display=swap');
               
-              #cancellation-paper-container .cancellation-urdu-main-heading {
-                font-family: 'Noto Naskh Arabic', 'Amiri', 'Noto Sans Arabic', serif !important;
+              #cancellation-paper-container .cancellation-urdu-main-heading,
+              .cancellation-urdu-main-heading {
+                font-family: 'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif !important;
                 line-height: 1.6 !important;
                 display: block !important;
                 text-align: center !important;
-                letter-spacing: 0 !important;
+                letter-spacing: 0px !important;
+                word-spacing: normal !important;
+                font-feature-settings: "liga" 1, "calt" 1 !important;
+                direction: rtl !important;
               }
 
               #cancellation-paper-container input,
@@ -636,7 +723,15 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
 
             {/* Title (Centered Urdu heading with small bracket text below and generous line height) */}
             <div className="text-center pt-5 sm:pt-7 pb-2 mb-4">
-              <h1 className="text-xl sm:text-2xl font-black text-rose-700 tracking-wide cancellation-urdu-main-heading text-center mx-auto">
+              <h1
+                className="text-xl sm:text-2xl font-bold text-rose-700 tracking-normal cancellation-urdu-main-heading text-center mx-auto"
+                style={{
+                  fontFamily: "'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif",
+                  letterSpacing: '0px',
+                  lineHeight: '1.6',
+                  direction: 'rtl',
+                }}
+              >
                 کینسلیشن نوٹس
               </h1>
               <div className="text-xs sm:text-[13px] font-semibold font-sans text-rose-700 tracking-normal mt-1 leading-[2.5] text-center" dir="ltr">
@@ -668,12 +763,12 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
             </div>
 
             {/* Recipient Details Block (Generous padding, clear visibility, no overlap) */}
-            <div className="space-y-4 my-6 text-xs sm:text-sm font-semibold text-slate-800">
+            <div className="space-y-3 sm:space-y-4 my-4 sm:my-6 text-xs sm:text-sm font-semibold text-slate-800">
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <select
                   value={salutation}
                   onChange={(e) => setSalutation(e.target.value as any)}
-                  className="cancellation-field-input font-urdu font-black text-slate-900 border-b-2 border-slate-400 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 cursor-pointer py-0 leading-[2.7]"
+                  className="cancellation-field-input font-urdu font-black text-slate-900 border-b-2 border-slate-400 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 cursor-pointer py-0 leading-[2.7] shrink-0"
                 >
                   <option value="محترم جناب">محترم جناب</option>
                   <option value="محترمہ">محترمہ</option>
@@ -684,13 +779,13 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="محمد رضوان شفیع صاحب"
-                  className="cancellation-field-input font-urdu font-black text-slate-900 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[200px] bg-slate-50/70 rounded-xs py-0 leading-[2.7]"
+                  className="cancellation-field-input font-urdu font-black text-slate-900 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[140px] sm:min-w-[200px] bg-slate-50/70 rounded-xs py-0 leading-[2.7]"
                 />
 
                 <select
                   value={relationType}
                   onChange={(e) => setRelationType(e.target.value as any)}
-                  className="cancellation-field-input font-urdu font-bold text-slate-800 border-b-2 border-slate-400 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 cursor-pointer mr-1 py-0 leading-[2.7]"
+                  className="cancellation-field-input font-urdu font-bold text-slate-800 border-b-2 border-slate-400 bg-slate-50/70 rounded-xs focus:outline-hidden focus:border-rose-600 cursor-pointer mr-1 py-0 leading-[2.7] shrink-0"
                 >
                   <option value="ولد">ولد :</option>
                   <option value="زوجہ">زوجہ :</option>
@@ -701,19 +796,19 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
                   value={fatherOrHusbandName}
                   onChange={(e) => setFatherOrHusbandName(e.target.value)}
                   placeholder="محمد شفیع صاحب"
-                  className="cancellation-field-input font-urdu font-bold text-slate-800 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[180px] bg-slate-50/70 rounded-xs py-0 leading-[2.7]"
+                  className="cancellation-field-input font-urdu font-bold text-slate-800 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[140px] sm:min-w-[180px] bg-slate-50/70 rounded-xs py-0 leading-[2.7]"
                 />
               </div>
 
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <span className="font-urdu font-bold text-slate-800 min-w-[125px] shrink-0">شناختی کارڈ نمبر:</span>
+                <span className="font-urdu font-bold text-slate-800 min-w-[115px] sm:min-w-[125px] shrink-0">شناختی کارڈ نمبر:</span>
                 <input
                   type="text"
                   value={cnic}
                   onChange={(e) => setCnic(e.target.value)}
                   placeholder="42401-0513794-9"
                   dir="ltr"
-                  className="cancellation-field-input font-mono font-bold text-slate-900 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 w-56 bg-slate-50/70 rounded-xs text-left"
+                  className="cancellation-field-input font-mono font-bold text-slate-900 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 w-48 sm:w-56 max-w-full bg-slate-50/70 rounded-xs text-left"
                 />
                 {mobile && (
                   <span className="text-xs font-mono text-slate-500 mr-2" dir="ltr">
@@ -723,13 +818,13 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
               </div>
 
               <div className="flex flex-wrap items-start gap-2 sm:gap-3">
-                <span className="font-urdu font-bold text-slate-800 min-w-[125px] pt-2 shrink-0">رہائشی پتہ:</span>
+                <span className="font-urdu font-bold text-slate-800 min-w-[115px] sm:min-w-[125px] pt-2 shrink-0">رہائشی پتہ:</span>
                 <textarea
                   rows={2}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="مکان نمبر 580 سیکٹر نمبر 11 محلہ الخضرا سوسائٹی اورنگی ٹاؤن کراچی۔"
-                  className="cancellation-field-textarea font-urdu font-bold text-slate-800 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[280px] bg-slate-50/70 rounded-xs resize-none"
+                  className="cancellation-field-textarea font-urdu font-bold text-slate-800 border-b-2 border-slate-400 focus:outline-hidden focus:border-rose-600 flex-1 min-w-[200px] sm:min-w-[280px] max-w-full bg-slate-50/70 rounded-xs resize-none"
                 />
               </div>
             </div>
