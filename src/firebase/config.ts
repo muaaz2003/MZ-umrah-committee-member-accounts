@@ -8,6 +8,7 @@ const app = initializeApp(firebaseConfig);
 // CRITICAL: Bind to the specific provisioned firestoreDatabaseId as mandated by the Firebase skill
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+export { app };
 
 // Test server connection as mandated in skill guidelines
 export async function testFirebaseConnection() {

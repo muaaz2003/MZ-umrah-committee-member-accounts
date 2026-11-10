@@ -94,33 +94,10 @@ export const DEFAULT_SETTINGS: CommitteeSettings = {
   receiptFooter: 'Supervised by Abdul Shakoor Madni (M.Z.A Welfare Pakistan). Established 2019. May Allah accept your holy pilgrimage.',
   reminderText: 'Dear Member, please deposit your monthly Umrah committee installment before the 10th of this month.',
   signatoryName: 'Abdul Shakoor Madni (Admin)',
-  adminPassword: '1234',
-};
-
-const safeStorage = {
-  getItem: (key: string): string | null => {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      try {
-        return window.localStorage.getItem(key);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  },
-  setItem: (key: string, value: string): void => {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      try {
-        window.localStorage.setItem(key, value);
-      } catch {
-        // ignore
-      }
-    }
-  },
 };
 
 // -------------------------------------------------------------
-// SETTINGS SERVICE & CLOUD ADMIN PASSWORD
+// SETTINGS SERVICE
 // -------------------------------------------------------------
 export async function getSettings(): Promise<CommitteeSettings> {
   const path = 'settings';
@@ -129,9 +106,6 @@ export async function getSettings(): Promise<CommitteeSettings> {
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       const data = snap.data() as CommitteeSettings;
-      if (data.adminPassword) {
-        safeStorage.setItem('mz_admin_custom_password', data.adminPassword);
-      }
       return {
         id: snap.id,
         ...DEFAULT_SETTINGS,
@@ -145,12 +119,8 @@ export async function getSettings(): Promise<CommitteeSettings> {
     await setDoc(docRef, DEFAULT_SETTINGS);
     return DEFAULT_SETTINGS;
   } catch (error) {
-    console.warn('Could not fetch settings from Firestore, returning cached or defaults:', error);
-    const cachedPass = safeStorage.getItem('mz_admin_custom_password');
-    return {
-      ...DEFAULT_SETTINGS,
-      adminPassword: cachedPass || '1234',
-    };
+    console.warn('Could not fetch settings from Firestore, returning defaults:', error);
+    return DEFAULT_SETTINGS;
   }
 }
 
@@ -159,9 +129,6 @@ export async function updateSettings(settings: Partial<CommitteeSettings>, userE
   try {
     const docRef = doc(db, path, 'general');
     await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
-    if (settings.adminPassword) {
-      safeStorage.setItem('mz_admin_custom_password', settings.adminPassword);
-    }
 
     // If registrationFee was updated in settings, synchronize all members automatically
     const targetFee = settings.registrationFee !== undefined ? Number(settings.registrationFee) : settings.defaultRegistrationFee !== undefined ? Number(settings.defaultRegistrationFee) : undefined;
@@ -183,40 +150,6 @@ export async function updateSettings(settings: Partial<CommitteeSettings>, userE
 
     await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_SETTINGS', 'Settings', 'general', 'Updated committee general settings');
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function getAdminPassword(): Promise<string> {
-  const path = 'settings';
-  try {
-    const docRef = doc(db, path, 'general');
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data() as CommitteeSettings;
-      if (data.adminPassword) {
-        safeStorage.setItem('mz_admin_custom_password', data.adminPassword);
-        return data.adminPassword;
-      }
-    }
-    const cached = safeStorage.getItem('mz_admin_custom_password');
-    return cached || '1234';
-  } catch (error) {
-    console.warn('Could not fetch cloud admin password, using local cache:', error);
-    return safeStorage.getItem('mz_admin_custom_password') || '1234';
-  }
-}
-
-export async function updateAdminPassword(newPassword: string, userEmail: string = 'admin'): Promise<void> {
-  const path = 'settings';
-  const trimmed = newPassword.trim();
-  try {
-    const docRef = doc(db, path, 'general');
-    await setDoc(docRef, { adminPassword: trimmed, updatedAt: new Date().toISOString() }, { merge: true });
-    safeStorage.setItem('mz_admin_custom_password', trimmed);
-    await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_PASSWORD', 'Settings', 'general', 'Admin password updated in cloud database');
-  } catch (error) {
-    safeStorage.setItem('mz_admin_custom_password', trimmed);
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }

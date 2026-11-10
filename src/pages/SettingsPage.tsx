@@ -25,9 +25,9 @@ import {
   Check,
 } from 'lucide-react';
 import { CommitteeSettings, UserRole, Member, Installment } from '../types';
+import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { auth } from '../firebase/config';
 import {
-  updateAdminPassword,
-  getAdminPassword,
   createFullDatabaseBackup,
   downloadJsonFile,
   previewRescheduleInstallments,
@@ -155,58 +155,62 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setPasswordError(null);
     setPasswordSuccess(null);
 
-    let activeAdminPassword =
-      formData.adminPassword ||
-      initialSettings.adminPassword ||
-      localStorage.getItem('mz_admin_custom_password') ||
-      'madni123';
+    const newPassTrimmed = newPasswordInput.trim();
+    const currentPassTrimmed = currentPasswordInput.trim();
 
-    try {
-      const livePass = await getAdminPassword();
-      if (livePass) activeAdminPassword = livePass;
-    } catch {
-      // Use cached
-    }
-
-    const inputTrimmed = currentPasswordInput.trim();
-    if (inputTrimmed !== activeAdminPassword && inputTrimmed !== 'madni123') {
-      setPasswordError('موجودہ پاس ورڈ غلط ہے! براہ کرم درست موجودہ پاس ورڈ درج کریں۔');
+    if (!newPassTrimmed || newPassTrimmed.length < 6) {
+      setPasswordError('نیا پاس ورڈ کم از کم 6 ہندسوں یا حروف پر مشتمل ہونا چاہیے۔ (Password must be at least 6 characters)');
       return;
     }
 
-    if (newPasswordInput.trim().length < 4) {
-      setPasswordError('نیا پاس ورڈ کم از کم 4 ہندسوں یا حروف پر مشتمل ہونا چاہیے۔');
+    if (newPassTrimmed !== confirmPasswordInput.trim()) {
+      setPasswordError('نیا پاس ورڈ اور تصدیقی پاس ورڈ آپس میں مماثلت نہیں رکھتے! (Passwords do not match)');
       return;
     }
 
-    if (newPasswordInput.trim() !== confirmPasswordInput.trim()) {
-      setPasswordError('نیا پاس ورڈ اور تصدیقی پاس ورڈ آپس میں مماثلت نہیں رکھتے!');
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      setPasswordError('کوئی تصدیق شدہ ایڈمن سیشن فعال نہیں ہے۔ براہ کرم دوبارہ لاگ ان کریں۔ (No active admin session)');
       return;
     }
 
     try {
       setIsSavingPass(true);
-      const updatedPass = newPasswordInput.trim();
 
-      // Save to cloud Firestore database
-      await updateAdminPassword(updatedPass);
+      // Re-authenticate user with current password before updating
+      if (currentPassTrimmed) {
+        try {
+          const credential = EmailAuthProvider.credential(currentUser.email, currentPassTrimmed);
+          await reauthenticateWithCredential(currentUser, credential);
+        } catch (authErr: any) {
+          if (authErr?.code === 'auth/wrong-password' || authErr?.code === 'auth/invalid-credential') {
+            setPasswordError('موجودہ پاس ورڈ غلط ہے! براہ کرم درست موجودہ پاس ورڈ درج کریں۔');
+            setIsSavingPass(false);
+            return;
+          }
+        }
+      }
 
-      // Update parent and local state
-      const nextSettings = { ...formData, adminPassword: updatedPass };
-      setFormData(nextSettings);
-      onSaveSettings(nextSettings);
+      // Update password in Firebase Authentication securely
+      await updatePassword(currentUser, newPassTrimmed);
 
       setCurrentPasswordInput('');
       setNewPasswordInput('');
       setConfirmPasswordInput('');
-      setPasswordSuccess('ایڈمن پاس ورڈ کلاؤڈ ڈیٹا بیس میں کامیابی سے اپ ڈیٹ ہو گیا ہے! اب تمام ڈیوائسز، موبائل فونز اور شیئر کردہ لنکس پر یہی نیا پاس ورڈ لاگو ہو گا۔');
+      setPasswordSuccess('ایڈمن پاس ورڈ فائر بیس تصدیقی سروس (Firebase Auth) میں محفوظ طریقے سے اپ ڈیٹ ہو گیا ہے!');
 
       setTimeout(() => {
         setPasswordSuccess(null);
       }, 7000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving admin password:', err);
-      setPasswordError('پاس ورڈ کلاؤڈ پر محفوظ کرنے میں خرابی پیش آئی، انٹرنیٹ کنکشن چیک کر کے دوبارہ کوشش کریں۔');
+      if (err?.code === 'auth/requires-recent-login') {
+        setPasswordError('سیکیورٹی تقاضے کے تحت، براہ کرم ایک بار لاگ آؤٹ ہو کر دوبارہ لاگ ان کریں اور پھر پاس ورڈ تبدیل کریں۔');
+      } else if (err?.code === 'auth/weak-password') {
+        setPasswordError('پاس ورڈ کمزور ہے۔ کم از کم 6 مضبوط حروف استعمال کریں۔');
+      } else {
+        setPasswordError(err?.message || 'پاس ورڈ اپ ڈیٹ کرنے میں خرابی پیش آئی، دوبارہ کوشش کریں۔');
+      }
     } finally {
       setIsSavingPass(false);
     }

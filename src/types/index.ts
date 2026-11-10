@@ -256,7 +256,6 @@ export interface CommitteeSettings {
   reminderText: string;
   signatoryName: string;
   authorizedSignatoryTitle?: string;
-  adminPassword?: string;
 }
 
 export interface AuditLog {

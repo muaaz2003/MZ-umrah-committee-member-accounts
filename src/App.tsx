@@ -33,6 +33,8 @@ import {
   DEFAULT_SETTINGS,
 } from './services/firebaseService';
 import { calculateFinancialSummary, isInstallmentOverdue } from './utils/calculations';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase/config';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { QistWasoolModal } from './components/QistWasoolModal';
@@ -60,17 +62,14 @@ import { ZatiRecordPage } from './pages/ZatiRecordPage';
 import { AdminLoginModal } from './components/AdminLoginModal';
 
 export function App() {
-  // Admin authentication state: Single Admin = Abdul Shakoor Madni
+  // Admin authentication state managed strictly by Firebase Authentication
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('mz_admin_session') === 'true';
+    return auth.currentUser != null;
   });
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
 
   // Navigation & Page State - Default to 'zati-record' as requested by user
-  const [currentPage, setCurrentPage] = useState<string>(() => {
-    const savedSession = localStorage.getItem('mz_admin_session') === 'true';
-    return savedSession ? 'dashboard' : 'zati-record';
-  });
+  const [currentPage, setCurrentPage] = useState<string>('zati-record');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -79,12 +78,11 @@ export function App() {
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<AuthUser>(() => {
-    const savedSession = localStorage.getItem('mz_admin_session') === 'true';
-    if (savedSession) {
+    if (auth.currentUser) {
       return {
-        uid: 'admin-abdul-shakoor',
-        email: 'abdulshakoor.madni@mzumrah.com',
-        name: 'Abdul Shakoor Madni',
+        uid: auth.currentUser.uid,
+        email: auth.currentUser.email || 'admin@mzumrah.com',
+        name: auth.currentUser.displayName || 'Abdul Shakoor Madni (Admin)',
         role: 'SUPER ADMIN',
       };
     }
@@ -96,15 +94,8 @@ export function App() {
     };
   });
 
-  // Database Data States with instant local cache hydration
-  const [members, setMembers] = useState<Member[]>(() => {
-    try {
-      const cached = localStorage.getItem('mz_cached_members');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Database Data States - Zero unauthenticated pre-fill to prevent memory data leaks
+  const [members, setMembers] = useState<Member[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
@@ -112,17 +103,7 @@ export function App() {
   const [cancellations, setCancellations] = useState<CancellationNotice[]>([]);
   const [qarzaAgreements, setQarzaAgreements] = useState<QarzaHasanaAgreement[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [settings, setSettingsState] = useState<CommitteeSettings>(() => {
-    try {
-      const cachedPass = localStorage.getItem('mz_admin_custom_password');
-      return {
-        ...DEFAULT_SETTINGS,
-        adminPassword: cachedPass || '1234',
-      };
-    } catch {
-      return DEFAULT_SETTINGS;
-    }
-  });
+  const [settings, setSettingsState] = useState<CommitteeSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
   // Modals
@@ -149,12 +130,17 @@ export function App() {
   }, []);
 
   // Fetch data from Firestore.
-  // showSpinner = true ONLY on the initial app mount. Subsequent updates refresh silently in background.
+  // CRITICAL SECURITY: Only loads administrative collections if user is verified and authenticated via Firebase Auth
   const loadAllData = async (showSpinner: boolean = false) => {
+    // If not authenticated, do NOT fetch sensitive collections into browser memory
+    if (!auth.currentUser) {
+      setLoading(false);
+      return;
+    }
+
     let safetyTimer: any;
     if (showSpinner) {
       setLoading(true);
-      // Hard safety timer: Under NO circumstances should loading exceed 1.5 seconds
       safetyTimer = setTimeout(() => {
         setLoading(false);
       }, 1500);
@@ -194,11 +180,7 @@ export function App() {
       const settingsData = settingsResult.status === 'fulfilled' && settingsResult.value ? settingsResult.value : null;
 
       if (membersResult.status === 'fulfilled') {
-        const freshMembers = membersData || [];
-        setMembers(freshMembers);
-        try {
-          localStorage.setItem('mz_cached_members', JSON.stringify(freshMembers));
-        } catch {}
+        setMembers(membersData || []);
       }
 
       setPayments(paymentsData);
@@ -210,9 +192,6 @@ export function App() {
       setAuditLogs(auditLogsData);
       if (settingsData) {
         setSettingsState(settingsData);
-        if (settingsData.adminPassword) {
-          localStorage.setItem('mz_admin_custom_password', settingsData.adminPassword);
-        }
       }
     } catch (err) {
       console.error('Error loading Firestore data:', err);
@@ -224,8 +203,47 @@ export function App() {
     }
   };
 
+  // Standard Firebase Auth Session Tracking
   useEffect(() => {
-    loadAllData(true);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setIsAdminLoggedIn(true);
+        setCurrentUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || 'hafizmadni2003@gmail.com',
+          name: firebaseUser.displayName || 'Abdul Shakoor Madni (Super Admin)',
+          role: 'SUPER ADMIN',
+        });
+        loadAllData(false);
+      } else {
+        setIsAdminLoggedIn(false);
+        setCurrentUser({
+          uid: 'public-visitor',
+          email: 'visitor@mzumrah.com',
+          name: 'عوامی ممبر (Visitor)',
+          role: 'MEMBER',
+        });
+        // DATA LEAK FIX: Wipe all in-memory arrays when unauthenticated
+        setMembers([]);
+        setPayments([]);
+        setReceipts([]);
+        setInstallments([]);
+        setRefunds([]);
+        setCancellations([]);
+        setQarzaAgreements([]);
+        setAuditLogs([]);
+        setLoading(false);
+
+        // Clean any legacy stored sensitive data
+        try {
+          localStorage.removeItem('mz_admin_session');
+          localStorage.removeItem('mz_cached_members');
+          localStorage.removeItem('mz_admin_custom_password');
+        } catch {}
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Instant optimistic toggle for Registration Fee (Unpaid <-> Paid)
@@ -434,29 +452,35 @@ export function App() {
     }
   };
 
-  // Admin Login and Logout Handlers (Abdul Shakoor Madni)
+  // Admin Login and Logout Handlers
   const handleAdminLoginSuccess = () => {
     setIsAdminLoggedIn(true);
-    localStorage.setItem('mz_admin_session', 'true');
-    setCurrentUser({
-      uid: 'admin-abdul-shakoor',
-      email: 'abdulshakoor.madni@mzumrah.com',
-      name: 'Abdul Shakoor Madni',
-      role: 'SUPER ADMIN',
-    });
     setCurrentPage('dashboard');
     setIsAdminLoginModalOpen(false);
   };
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
     setIsAdminLoggedIn(false);
-    localStorage.removeItem('mz_admin_session');
     setCurrentUser({
       uid: 'public-visitor',
       email: 'visitor@mzumrah.com',
       name: 'عوامی ممبر (Visitor)',
       role: 'MEMBER',
     });
+    // Ensure all memory state is wiped immediately
+    setMembers([]);
+    setPayments([]);
+    setReceipts([]);
+    setInstallments([]);
+    setRefunds([]);
+    setCancellations([]);
+    setQarzaAgreements([]);
+    setAuditLogs([]);
     setCurrentPage('zati-record');
     setSelectedMemberId(null);
   };
@@ -811,12 +835,11 @@ export function App() {
         isDuplicate={isReceiptDuplicate}
       />
 
-      {/* Admin Login Modal (Abdul Shakoor Madni) */}
+      {/* Admin Login Modal (Firebase Auth) */}
       <AdminLoginModal
         isOpen={isAdminLoginModalOpen}
         onClose={() => setIsAdminLoginModalOpen(false)}
         onSuccess={handleAdminLoginSuccess}
-        adminPassword={settings.adminPassword}
       />
     </div>
   );

@@ -256,8 +256,42 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
         </form>
       </div>
 
-      {/* MATCH NOT FOUND ALERT (When searched but name or cnic didn't match) */}
-      {hasSearched && !matchedMember && (
+      {/* MATCH NOT FOUND ALERT OR AUTHENTICATION REQUIRED */}
+      {hasSearched && !matchedMember && !isAdminLoggedIn && (
+        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 sm:p-8 text-amber-950 shadow-xs space-y-4" dir="rtl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-800 shrink-0">
+              <Lock className="w-5 h-5 text-amber-700" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-amber-950 font-urdu">
+                محفوظ تصدیق درکار ہے (Authentication Required)
+              </h3>
+              <p className="text-xs text-amber-800 mt-0.5 font-urdu">
+                سیکیورٹی ضوابط کے تحت ممبران کا حساس ڈیٹا پبلک میموری میں ظاہر نہیں کیا جاتا۔
+              </p>
+            </div>
+          </div>
+
+          <div className="text-xs text-amber-900/90 leading-relaxed bg-white/80 p-4 rounded-xl border border-amber-200 font-urdu space-y-3">
+            <p>
+              تمام ممبران کے مالیاتی ریکارڈز کلاؤڈ سیکیورٹی رولز (Cloud Security Rules) کے تحت محفوظ کر دیے گئے ہیں تاکہ ڈیٹا لِیک نہ ہو۔ مکمل کھاتہ دیکھنے کے لیے براہ کرم ایڈمن پورٹل پر لاگ ان کریں۔
+            </p>
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={onOpenAdminLogin}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-emerald-950 text-xs font-black rounded-xl cursor-pointer shadow-xs font-urdu inline-flex items-center gap-2"
+              >
+                <Lock className="w-4 h-4" />
+                <span>ایڈمن لاگ ان کریں (Admin Login)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasSearched && !matchedMember && isAdminLoggedIn && (
         <div className="bg-rose-50 border border-rose-200 rounded-3xl p-6 sm:p-8 text-rose-900 shadow-xs space-y-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-700 shrink-0">
