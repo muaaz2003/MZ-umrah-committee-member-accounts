@@ -10,7 +10,6 @@ import {
   AuditLog,
   CommitteeSettings,
   AuthUser,
-  UserRole,
 } from './types';
 import {
   getAllMembers,
@@ -204,9 +203,7 @@ export function App() {
       console.error('Error loading Firestore data:', err);
     } finally {
       if (safetyTimer) clearTimeout(safetyTimer);
-      if (showSpinner) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
@@ -262,7 +259,7 @@ export function App() {
 
     // 2. Persist to Firestore in background
     try {
-      await updateMemberRegistrationFeeStatus(memberId, nextStatus);
+      await updateMemberRegistrationFeeStatus(memberId, nextStatus, currentUser.email);
       // Silent refresh without spinner
       loadAllData(false);
     } catch (err) {
@@ -294,42 +291,6 @@ export function App() {
       i.dueDate === todayStr &&
       computeInstallmentStatus(i, todayStr) !== 'Paid'
   ).length;
-
-  // Role Switcher Handler (to test Flow 7: Member login, Flow 8: Staff login, etc.)
-  const handleSwitchUserRole = (role: UserRole, memberId?: string) => {
-    if (role === 'MEMBER') {
-      const targetMember = members.find((m) => m.id === memberId) || members[0];
-      setCurrentUser({
-        uid: targetMember ? targetMember.id : 'member-uid',
-        email: targetMember ? `${targetMember.memberNumber.toLowerCase()}@member.mzumrah.com` : 'member@mzumrah.com',
-        name: targetMember ? targetMember.fullName : 'Member Account',
-        role: 'MEMBER',
-        memberId: targetMember?.id,
-      });
-      setSelectedMemberId(targetMember ? targetMember.id : null);
-    } else if (role === 'STAFF') {
-      setCurrentUser({
-        uid: 'staff-uid-1',
-        email: 'staff@mzumrah.com',
-        name: 'Kamran Ali (Cashier / Staff)',
-        role: 'STAFF',
-      });
-    } else if (role === 'ADMIN') {
-      setCurrentUser({
-        uid: 'admin-uid-2',
-        email: 'operations@mzumrah.com',
-        name: 'Rashid Khan (Committee Admin)',
-        role: 'ADMIN',
-      });
-    } else {
-      setCurrentUser({
-        uid: 'admin-uid-1',
-        email: 'admin@mzumrah.com',
-        name: 'M. Zubair (Super Admin)',
-        role: 'SUPER ADMIN',
-      });
-    }
-  };
 
   // Open Qist Wasool Modal - Instant response without blocking network requests
   const handleOpenQistWasool = (member?: Member, targetInstallment?: Installment) => {
@@ -552,8 +513,6 @@ export function App() {
       <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
         {/* Top Header */}
         <Header
-          currentUser={currentUser}
-          onSwitchUserRole={handleSwitchUserRole}
           members={members}
           onSelectMember={(memberId) => {
             setSelectedMemberId(memberId);
@@ -597,6 +556,7 @@ export function App() {
               receipts={receipts}
               onOpenReceipt={(rec) => {
                 setActiveReceipt(rec);
+                setIsReceiptDuplicate(true);
                 setIsReceiptModalOpen(true);
               }}
               onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
@@ -747,7 +707,7 @@ export function App() {
               refunds={refunds}
               members={members}
               currentUserEmail={currentUser.email}
-              onRefresh={loadAllData}
+              onRefresh={() => loadAllData(false)}
             />
           ) : currentPage === 'cancellations' ? (
             /* Cancellation Notices & Record */
@@ -771,6 +731,7 @@ export function App() {
             <RegistrationFeesPage
               members={members}
               settings={settings}
+              currentUserEmail={currentUser.email}
               onRefresh={() => loadAllData(false)}
               onToggleFeeStatus={handleToggleMemberRegistrationFee}
             />

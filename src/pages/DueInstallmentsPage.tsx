@@ -73,9 +73,9 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
       const m = members.find((mem) => mem.id === i.memberId);
       if (!m) return false;
       const match =
-        m.fullName.toLowerCase().includes(q) ||
-        m.memberNumber.toLowerCase().includes(q) ||
-        m.mobile.toLowerCase().includes(q);
+        (m.fullName || '').toLowerCase().includes(q) ||
+        (m.memberNumber || '').toLowerCase().includes(q) ||
+        (m.mobile || '').toLowerCase().includes(q);
       if (!match) return false;
     }
 
@@ -102,7 +102,7 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
         <p className="text-xs text-slate-500 mt-1">
           {onlyOverdue
             ? 'Members with installments past their scheduled due date. Prompt physical collection.'
-            : 'Fixed monthly installment schedule (due on the 15th of each month).'}
+            : 'Fixed monthly installment schedule (due on the 10th of each month).'}
         </p>
       </div>
 
@@ -244,7 +244,7 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
                       )}
                     </td>
                     <td className="py-3 px-4 text-right font-extrabold text-amber-900 text-sm">
-                      {formatPKR(inst.remainingAmount || inst.amount)}
+                      {formatPKR(inst.remainingAmount !== undefined ? inst.remainingAmount : Math.max(0, (inst.amount || 0) - (inst.paidAmount || 0)))}
                     </td>
                     <td className="py-3 px-4 text-center">
                       {(() => {

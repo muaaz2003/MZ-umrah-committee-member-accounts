@@ -26,20 +26,23 @@ export const ReceiptVerificationView: React.FC<ReceiptVerificationViewProps> = (
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadReceipt() {
       try {
         setLoading(true);
+        setNotFound(false);
+        setErrorMessage(null);
         const data = await getReceiptById(receiptId);
         if (data) {
           setReceipt(data);
         } else {
           setNotFound(true);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error verifying receipt:', err);
-        setNotFound(true);
+        setErrorMessage(err?.message || 'Unable to verify receipt right now due to permissions or network error.');
       } finally {
         setLoading(false);
       }
@@ -68,6 +71,25 @@ export const ReceiptVerificationView: React.FC<ReceiptVerificationViewProps> = (
               <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
               <p className="text-sm font-medium">Verifying receipt in committee ledger...</p>
             </div>
+          ) : errorMessage ? (
+            <div className="text-center py-8 space-y-4">
+              <div className="w-16 h-16 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Verification Restricted / Error</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                  {errorMessage}
+                </p>
+              </div>
+              <button
+                onClick={onBackToApp}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Return to Application</span>
+              </button>
+            </div>
           ) : notFound || !receipt ? (
             <div className="text-center py-8 space-y-4">
               <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto">
@@ -81,7 +103,7 @@ export const ReceiptVerificationView: React.FC<ReceiptVerificationViewProps> = (
               </div>
               <button
                 onClick={onBackToApp}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Return to Application</span>
@@ -128,7 +150,10 @@ export const ReceiptVerificationView: React.FC<ReceiptVerificationViewProps> = (
                 <div className="flex justify-between items-center pb-2 border-b border-slate-200">
                   <span className="text-slate-500">Installment Number</span>
                   <span className="font-bold text-slate-800">
-                    Qist #{receipt.installmentNumber}
+                    {receipt.installmentDescription ||
+                      (receipt.installmentsCovered && receipt.installmentsCovered.length > 1
+                        ? `Qist #${receipt.installmentsCovered.join(', #')}`
+                        : `Qist #${receipt.installmentNumber}`)}
                   </span>
                 </div>
 

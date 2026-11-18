@@ -14,6 +14,7 @@ import { updateMemberRegistrationFeeStatus } from '../services/firebaseService';
 interface RegistrationFeesPageProps {
   members: Member[];
   settings?: CommitteeSettings;
+  currentUserEmail?: string;
   onRefresh: () => void;
   onToggleFeeStatus?: (memberId: string, nextStatus: 'Paid' | 'Unpaid') => void;
 }
@@ -21,6 +22,7 @@ interface RegistrationFeesPageProps {
 export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
   members,
   settings,
+  currentUserEmail = 'admin',
   onRefresh,
   onToggleFeeStatus,
 }) => {
@@ -42,9 +44,9 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       return (
-        m.fullName.toLowerCase().includes(q) ||
-        m.memberNumber.toLowerCase().includes(q) ||
-        m.mobile.toLowerCase().includes(q)
+        (m.fullName || '').toLowerCase().includes(q) ||
+        (m.memberNumber || '').toLowerCase().includes(q) ||
+        (m.mobile || '').toLowerCase().includes(q)
       );
     }
     return true;
@@ -65,7 +67,7 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
 
     try {
       setUpdatingId(member.id);
-      await updateMemberRegistrationFeeStatus(member.id, nextStatus);
+      await updateMemberRegistrationFeeStatus(member.id, nextStatus, currentUserEmail);
       onRefresh();
     } catch (err) {
       console.error('Error toggling registration fee:', err);
@@ -84,7 +86,7 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
             <span>Registration Fees Ledger (Separate Accounting)</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            One-time Rs. 1,000 joining administrative fee, kept strictly distinct from monthly committee installment capital.
+            One-time {formatPKR(fixedFee)} joining administrative fee, kept strictly distinct from monthly committee installment capital.
           </p>
         </div>
 

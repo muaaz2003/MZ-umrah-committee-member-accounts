@@ -14,12 +14,37 @@ import {
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas-pro';
 import { Member, QarzaHasanaAgreement } from '../types';
-import { recordQarzaAgreement } from '../services/firebaseService';
+import { recordQarzaAgreement, updateQarzaAgreement } from '../services/firebaseService';
 import { getTodayKarachiDate, numberToWordsUrdu } from '../utils/calculations';
 import mzaLogo from '../assets/images/mza-logo.png';
 import mzaStamp from '../assets/images/mza-stamp.png';
 
 const normalizeCnicDigits = (cnic?: string) => (cnic || '').replace(/[-\s]/g, '').trim();
+
+async function ensureUrduFontsLoaded(): Promise<void> {
+  if (typeof window === 'undefined' || !('fonts' in document)) return;
+  try {
+    const fontFaces = [
+      new FontFace('Noto Nastaliq Urdu', 'url(/fonts/NotoNastaliqUrdu-Regular.ttf)', { weight: '400' }),
+      new FontFace('Noto Nastaliq Urdu', 'url(/fonts/NotoNastaliqUrdu-Regular.ttf)', { weight: '700' }),
+      new FontFace('Noto Naskh Arabic', 'url(/fonts/NotoNaskhArabic-Regular.ttf)', { weight: '400' }),
+      new FontFace('Noto Naskh Arabic', 'url(/fonts/NotoNaskhArabic-Regular.ttf)', { weight: '700' }),
+    ];
+    await Promise.all(
+      fontFaces.map(async (f) => {
+        try {
+          const loaded = await f.load();
+          document.fonts.add(loaded);
+        } catch {
+          // Already registered or cached
+        }
+      })
+    );
+  } catch (err) {
+    console.warn('FontFace registration note:', err);
+  }
+  await document.fonts.ready;
+}
 
 interface QarzaModalProps {
   isOpen: boolean;
@@ -111,6 +136,18 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
   };
 
   useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen) {
       if (initialAgreement) {
         setAgreementNumber(initialAgreement.agreementNumber || '');
@@ -135,6 +172,7 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
         setGuarantorMobile(initialAgreement.guarantorMobile || '');
         setIssuedBy(initialAgreement.issuedBy || 'ایم زیڈ اے عمرہ کمیٹی');
         setSignatoryName(initialAgreement.signatoryName || 'حافظ عبد الشکور مدنی');
+        setStatusMessage(null);
       } else if (targetMember) {
         resetFields();
         applyMemberData(targetMember);
@@ -223,28 +261,32 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
       return;
     }
 
-    if (!initialAgreement && selectedMemberId) {
-      const selectedMem = members.find((m) => m.id === selectedMemberId);
-      if (selectedMem && selectedMem.status !== 'Active' && selectedMem.status !== 'Completed') {
-        setStatusMessage({
-          type: 'error',
-          text: `صرف فعال (Active) یا مکمل (Completed) ممبر کو قرضِ حسنہ جاری کیا جا سکتا ہے۔ اس ممبر کا اسٹیٹس ${selectedMem.status} ہے۔`,
-        });
-        return;
+    if (!initialAgreement) {
+      if (selectedMemberId) {
+        const selectedMem = members.find((m) => m.id === selectedMemberId);
+        if (selectedMem && selectedMem.status !== 'Active' && selectedMem.status !== 'Completed') {
+          setStatusMessage({
+            type: 'error',
+            text: `صرف فعال (Active) یا مکمل (Completed) ممبر کو قرضِ حسنہ جاری کیا جا سکتا ہے۔ اس ممبر کا اسٹیٹس ${selectedMem.status} ہے۔`,
+          });
+          return;
+        }
       }
 
-      const memberHasActiveLoan = existingAgreements.some(
-        (a) =>
-          a.status === 'Active' &&
-          (a.memberId === selectedMemberId ||
-            (borrowerCnicNorm && normalizeCnicDigits(a.cnic) === borrowerCnicNorm))
-      );
-      if (memberHasActiveLoan) {
-        setStatusMessage({
-          type: 'error',
-          text: 'اس ممبر کے نام پر پہلے سے ایک فعال (Active) قرضِ حسنہ جاری ہے، نیا قرض جاری نہیں ہو سکتا۔',
-        });
-        return;
+      if (selectedMemberId || borrowerCnicNorm) {
+        const memberHasActiveLoan = existingAgreements.some(
+          (a) =>
+            a.status === 'Active' &&
+            ((selectedMemberId && a.memberId === selectedMemberId) ||
+              (borrowerCnicNorm && normalizeCnicDigits(a.cnic) === borrowerCnicNorm))
+        );
+        if (memberHasActiveLoan) {
+          setStatusMessage({
+            type: 'error',
+            text: 'اس فرد/ممبر کے نام پر پہلے سے ایک فعال (Active) قرضِ حسنہ جاری ہے، نیا قرض جاری نہیں ہو سکتا۔',
+          });
+          return;
+        }
       }
     }
 
@@ -275,7 +317,7 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
         repaymentDurationMonths,
         paidReturnAmount: initialAgreement?.paidReturnAmount || 0,
         remainingReturnAmount: initialAgreement
-          ? initialAgreement.remainingReturnAmount
+          ? Math.max(0, numericLoanAmount - (initialAgreement.paidReturnAmount || 0))
           : numericLoanAmount,
         status: (initialAgreement?.status || 'Active') as 'Active' | 'Repaid' | 'Defaulted',
         guarantorName: guarantorName.trim(),
@@ -287,9 +329,17 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
         signatoryName: signatoryName.trim(),
       };
 
-      const saved = await recordQarzaAgreement(agreementData, currentUserEmail);
+      const saved = initialAgreement
+        ? await updateQarzaAgreement(initialAgreement.id, agreementData, currentUserEmail)
+        : await recordQarzaAgreement(agreementData, currentUserEmail);
+
       setIsSubmitting(false);
-      setStatusMessage({ type: 'success', text: 'عہد نامہ قرضِ حسنہ کامیابی سے محفوظ اور ریکارڈ ہو گیا۔' });
+      setStatusMessage({
+        type: 'success',
+        text: initialAgreement
+          ? 'عہد نامہ قرضِ حسنہ کامیابی سے اپ ڈیٹ ہو گیا۔'
+          : 'عہد نامہ قرضِ حسنہ کامیابی سے محفوظ اور ریکارڈ ہو گیا۔',
+      });
 
       if (onSuccess && saved) {
         onSuccess(saved);
@@ -310,28 +360,31 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
     let stagingContainer: HTMLDivElement | null = null;
 
     try {
+      await ensureUrduFontsLoaded();
+
       const element = printAgreementRef.current;
       const A4_LAYOUT_WIDTH = 800;
 
-      // Off-screen staging container
+      // Off-screen staging container positioned cleanly off-screen
       stagingContainer = document.createElement('div');
       stagingContainer.id = 'qarza-pdf-staging-root';
       stagingContainer.style.position = 'fixed';
       stagingContainer.style.top = '0';
-      stagingContainer.style.left = '0';
+      stagingContainer.style.left = '-10000px';
       stagingContainer.style.width = `${A4_LAYOUT_WIDTH}px`;
       stagingContainer.style.maxWidth = `${A4_LAYOUT_WIDTH}px`;
       stagingContainer.style.minWidth = `${A4_LAYOUT_WIDTH}px`;
       stagingContainer.style.backgroundColor = '#ffffff';
-      stagingContainer.style.zIndex = '-9999';
+      stagingContainer.style.zIndex = '1';
       stagingContainer.style.opacity = '1';
       stagingContainer.style.pointerEvents = 'none';
       stagingContainer.style.overflow = 'visible';
       stagingContainer.style.boxSizing = 'border-box';
 
-      // Clone element
+      // Clone element with unique ID and remove embedded <style> tags (which may contain external @imports)
       const clone = element.cloneNode(true) as HTMLElement;
-      clone.id = 'qarza-paper-container';
+      clone.id = 'qarza-paper-pdf-clone';
+      clone.querySelectorAll('style').forEach((s) => s.remove());
       clone.style.width = `${A4_LAYOUT_WIDTH}px`;
       clone.style.minWidth = `${A4_LAYOUT_WIDTH}px`;
       clone.style.maxWidth = `${A4_LAYOUT_WIDTH}px`;
@@ -346,16 +399,40 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
       clone.style.border = '1px solid #cbd5e1';
       clone.style.backgroundColor = '#ffffff';
 
-      // Fonts & baseline CSS
+      // Local fonts & baseline CSS (no external Google Fonts network @import)
       const fontStyle = document.createElement('style');
       fontStyle.textContent = `
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
+        @font-face {
+          font-family: 'Noto Nastaliq Urdu';
+          src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+          font-weight: 400;
+          font-style: normal;
+        }
+        @font-face {
+          font-family: 'Noto Nastaliq Urdu';
+          src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+          font-weight: 700;
+          font-style: normal;
+        }
+        @font-face {
+          font-family: 'Noto Naskh Arabic';
+          src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+          font-weight: 400;
+          font-style: normal;
+        }
+        @font-face {
+          font-family: 'Noto Naskh Arabic';
+          src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+          font-weight: 700;
+          font-style: normal;
+        }
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         .pdf-cloned-control-replacement {
           box-sizing: border-box !important;
           letter-spacing: 0px !important;
           word-break: break-word !important;
         }
+        #qarza-paper-pdf-clone .qarza-urdu-main-heading,
         .qarza-urdu-main-heading {
           font-family: 'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif !important;
           letter-spacing: 0px !important;
@@ -450,20 +527,40 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
       stagingContainer.appendChild(clone);
       document.body.appendChild(stagingContainer);
 
+      // Ensure all images inside the cloned paper are completely loaded/decoded
+      const cloneImgs = Array.from(clone.querySelectorAll('img'));
+      await Promise.all(
+        cloneImgs.map(async (img) => {
+          if (!img.complete) {
+            await new Promise<void>((resolve) => {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            });
+          }
+          if (typeof img.decode === 'function') {
+            try {
+              await img.decode();
+            } catch {
+              // ignore decode errors
+            }
+          }
+        })
+      );
+
       if (document.fonts) {
         try {
           await document.fonts.ready;
         } catch {}
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       const fullContentHeight = Math.ceil(
-        Math.max(clone.getBoundingClientRect().height, clone.scrollHeight, clone.offsetHeight)
+        Math.max(clone.getBoundingClientRect().height, clone.scrollHeight, clone.offsetHeight, 100)
       );
 
       const canvas = await html2canvas(clone, {
-        scale: 2.5,
+        scale: 2.2,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
@@ -476,6 +573,10 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
         scrollX: 0,
         scrollY: 0,
       });
+
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error('Generated PDF canvas is empty');
+      }
 
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
@@ -696,8 +797,6 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
           >
             {/* Scoped CSS strictly limited to this Agreement form */}
             <style>{`
-              @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&display=swap');
-              
               #qarza-paper-container .qarza-urdu-main-heading,
               .qarza-urdu-main-heading {
                 font-family: 'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif !important;

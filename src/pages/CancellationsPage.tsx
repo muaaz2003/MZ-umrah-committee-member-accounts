@@ -88,7 +88,7 @@ export const CancellationsPage: React.FC<CancellationsPageProps> = ({
       members.find(
         (m) =>
           (m.cnic && noticeToRestore.cnic && m.cnic.replace(/\D/g, '') === noticeToRestore.cnic.replace(/\D/g, '')) ||
-          m.fullName.trim() === noticeToRestore.fullName.trim()
+          (m.fullName || '').trim() === (noticeToRestore.fullName || '').trim()
       )?.id;
 
     if (!targetMemberId) {
@@ -309,9 +309,10 @@ export const CancellationsPage: React.FC<CancellationsPageProps> = ({
                     (m) =>
                       m.id === item.memberId ||
                       (m.cnic && item.cnic && m.cnic.replace(/\D/g, '') === item.cnic.replace(/\D/g, '')) ||
-                      m.fullName.trim() === item.fullName.trim()
+                      (m.fullName || '').trim() === (item.fullName || '').trim()
                   );
                   const isAlreadyActive = linkedMember?.status === 'Active';
+                  const isRefunded = linkedMember?.status === 'Refunded' || item.status === 'Settled';
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
@@ -337,15 +338,15 @@ export const CancellationsPage: React.FC<CancellationsPageProps> = ({
                           {item.planMonths || 24} ماہ پلان
                         </span>
                         <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                          (Rs. {item.installmentAmount?.toLocaleString() || 5000}/mo)
+                          (Rs. {(item.installmentAmount ?? 5000).toLocaleString()}/mo)
                         </div>
                       </td>
                       <td className="py-3.5 px-5 text-right">
                         <div className="text-slate-800 font-medium">
-                          ادا شدہ: <strong>{item.paidInstallmentsCount || 1}</strong>
+                          ادا شدہ: <strong>{item.paidInstallmentsCount ?? 0}</strong>
                         </div>
                         <div className="text-rose-700 text-[10px] mt-0.5">
-                          باقی: <strong>{item.remainingInstallmentsCount ?? 23}</strong>
+                          باقی: <strong>{item.remainingInstallmentsCount ?? 0}</strong>
                         </div>
                       </td>
                       <td className="py-3.5 px-5 text-right font-black text-rose-700 text-sm">
@@ -355,6 +356,10 @@ export const CancellationsPage: React.FC<CancellationsPageProps> = ({
                         {isAlreadyActive ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-block">
                             بحال شدہ (Active)
+                          </span>
+                        ) : isRefunded ? (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200 inline-block">
+                            رقم واپس (Refunded)
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 inline-block">
@@ -484,12 +489,18 @@ export const CancellationsPage: React.FC<CancellationsPageProps> = ({
       {/* The Cancellation Modal Component */}
       <CancellationModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedNoticeForView(null);
+          setSelectedMemberForCancel(null);
+        }}
         members={members}
         initialMember={selectedMemberForCancel}
         existingNotice={selectedNoticeForView}
         onSuccess={() => {
           setIsModalOpen(false);
+          setSelectedNoticeForView(null);
+          setSelectedMemberForCancel(null);
           if (onRefresh) onRefresh();
         }}
         currentUserEmail={currentUserEmail}

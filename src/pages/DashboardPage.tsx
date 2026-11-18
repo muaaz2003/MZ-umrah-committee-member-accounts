@@ -133,7 +133,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   }, [installments, members, todayDateStr]);
 
   const totalOverdueAmount = useMemo(() => {
-    return overdueInstallments.reduce((sum, i) => sum + (i.remainingAmount || i.amount || 0), 0);
+    return overdueInstallments.reduce(
+      (sum, i) =>
+        sum +
+        (i.remainingAmount !== undefined
+          ? Number(i.remainingAmount) || 0
+          : Math.max(0, (i.amount || 0) - (i.paidAmount || 0))),
+      0
+    );
   }, [overdueInstallments]);
 
   // Payment Method Breakdown for records
@@ -219,10 +226,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         const q = receiptSearch.toLowerCase().trim();
         const matchesSearch =
           !q ||
-          r.receiptNumber.toLowerCase().includes(q) ||
-          r.memberName.toLowerCase().includes(q) ||
-          r.memberNumber.toLowerCase().includes(q) ||
-          r.paymentMethod.toLowerCase().includes(q);
+          (r.receiptNumber || '').toLowerCase().includes(q) ||
+          (r.memberName || '').toLowerCase().includes(q) ||
+          (r.memberNumber || '').toLowerCase().includes(q) ||
+          (r.paymentMethod || '').toLowerCase().includes(q);
         return matchesMethod && matchesSearch;
       })
       .slice(0, 20); // Top 20 for responsive speed
@@ -422,7 +429,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="text-lg font-bold text-gray-900 mt-0.5">
             {formatPKR(summary.thisMonthCollection)}
           </div>
-          <div className="text-[10px] text-emerald-700 mt-0.5">15th Due Cycle Target</div>
+          <div className="text-[10px] text-emerald-700 mt-0.5">10th Due Cycle Target</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
@@ -673,7 +680,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
           <div className="mt-4 pt-3 border-t border-gray-100 text-center">
             <span className="text-[11px] text-gray-500">
-              Total Cash in Hand:{' '}
+              Cash at Counter Collected:{' '}
               <strong className="text-emerald-800 font-bold">{formatPKR(methodStats.cash.total)}</strong>
             </span>
           </div>
@@ -697,7 +704,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   Plan A — 24 Months Committee
                 </h3>
                 <span className="text-[11px] text-gray-500">
-                  Target: Rs. 120,000 / member @ Rs. 5,000 monthly
+                  Target: 24 Monthly Installments (Rs. 5,000–10,000/mo)
                 </span>
               </div>
             </div>
@@ -759,7 +766,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   Plan B — 36 Months Committee
                 </h3>
                 <span className="text-[11px] text-gray-500">
-                  Target: Rs. 180,000 / member @ Rs. 5,000 monthly
+                  Target: 36 Monthly Installments (Rs. 5,000–10,000/mo)
                 </span>
               </div>
             </div>
@@ -938,7 +945,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                           <span className="block text-[10px] text-gray-400">{rec.memberNumber}</span>
                         </td>
                         <td className="py-3 px-4 font-bold text-gray-700">
-                          Qist #{rec.installmentNumber}
+                          {rec.installmentDescription || `Qist #${rec.installmentNumber}`}
                         </td>
                         <td className="py-3 px-4">
                           <span
@@ -1036,7 +1043,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right font-bold text-rose-700">
-                          {formatPKR(item.remainingAmount || item.amount)}
+                          {formatPKR(item.remainingAmount !== undefined ? item.remainingAmount : Math.max(0, (item.amount || 0) - (item.paidAmount || 0)))}
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="inline-flex items-center gap-1.5">

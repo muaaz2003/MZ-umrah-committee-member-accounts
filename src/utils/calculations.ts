@@ -459,8 +459,9 @@ export function isInstallmentOverdue(inst: Installment): boolean {
 
 export function getDaysLate(dueDateStr: string): number {
   if (!dueDateStr) return 0;
+  const cleanDue = dueDateStr.trim().split('T')[0];
   const todayStr = getTodayKarachiDate();
-  if (dueDateStr >= todayStr) return 0;
+  if (cleanDue >= todayStr) return 0;
 
   const { year: dy, month: dm, day: dd } = parseDateParts(dueDateStr);
   const { year: ty, month: tm, day: td } = parseDateParts(todayStr);

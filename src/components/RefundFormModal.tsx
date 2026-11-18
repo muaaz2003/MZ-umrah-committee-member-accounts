@@ -33,6 +33,8 @@ interface RefundFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   member?: Member | null;
+  members?: Member[];
+  existingRefund?: Refund | null;
   currentUserEmail?: string;
   onRefundSuccess?: (refund: Refund) => void;
 }
@@ -45,12 +47,14 @@ async function getEmbeddedArabicFontBase64(): Promise<string> {
     const res = await fetch('/fonts/NotoNaskhArabic-Regular.ttf');
     if (!res.ok) return '';
     const arrayBuffer = await res.arrayBuffer();
-    let binary = '';
     const bytes = new Uint8Array(arrayBuffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    const chunks: string[] = [];
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+      const sub = bytes.subarray(i, i + chunkSize);
+      chunks.push(String.fromCharCode(...sub));
     }
-    cachedArabicFontBase64 = window.btoa(binary);
+    cachedArabicFontBase64 = window.btoa(chunks.join(''));
     return cachedArabicFontBase64;
   } catch (e) {
     console.warn('Failed to load embedded Arabic/Urdu font for jsPDF:', e);
@@ -89,9 +93,15 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   isOpen,
   onClose,
   member,
+  members = [],
+  existingRefund = null,
   currentUserEmail = 'admin',
   onRefundSuccess,
 }) => {
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+  const activeMember =
+    member ||
+    (selectedMemberId ? members.find((m) => m.id === selectedMemberId) || null : null);
   // All inputs start empty as explicitly required by user
   const [voucherNumber, setVoucherNumber] = useState('');
   const [refundDate, setRefundDate] = useState('');
@@ -148,29 +158,141 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   // Form paper capture ref
   const formPrintRef = useRef<HTMLDivElement | null>(null);
 
-  // Lock background body scroll when modal is open and automatically set initial Voucher # and Date
-  useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      const originalTouchAction = document.body.style.touchAction;
-      document.body.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
+  const fillFormFromMember = (target: Member, silent: boolean = false) => {
+    const formattedDate = formatDateDisplay(getTodayKarachiDate());
+    const autoVoucher = `MZA-REF-${Date.now().toString().slice(-4)}`;
 
-      // Automatically generate Voucher # and Date as soon as the refund page/modal opens
-      const formattedDate = formatDateDisplay(getTodayKarachiDate());
-      const autoVoucher = `MZA-REF-${Date.now().toString().slice(-4)}`;
+    setVoucherNumber(autoVoucher);
+    setRefundDate(formattedDate);
+    setMemberName(target.fullName || '');
+    setFatherName(target.fatherName || '');
+    setCnic(target.cnic || '');
+    setMemberNumber(target.memberNumber || '');
+    setGroupNumber(target.groupNumber || (target.memberNumber ? `#GRP-${target.memberNumber.replace(/\D/g, '')}` : ''));
+    setPhone(target.mobile || '');
+    setAddress(target.address || '');
+    setArea('کراچی / Karachi');
 
-      setVoucherNumber((prev) => (prev ? prev : autoVoucher));
-      setRefundDate((prev) => (prev ? prev : formattedDate));
-      setIssueDate((prev) => (prev ? prev : formattedDate));
-      setEarlyExitConfirmed(false);
+    setSalutationName(target.fullName || '');
+    setSalutationFather(target.fatherName || '');
 
-      return () => {
-        document.body.style.overflow = originalOverflow;
-        document.body.style.touchAction = originalTouchAction;
-      };
+    const amt = String(Number(target.paidAmount) || 0);
+    handleAmountChange(amt);
+
+    setQistDescription(`قسط نمبر 1 تا ${target.planMonths || 24} (مکمل امانت شدہ رقم کی واپسی)`);
+    setRefundReason('Member request / Committee plan cancellation voucher');
+    setMemberFeedback('انتظامیہ کے احسن سلوک اور بروقت امانت کی واپسی پر مکمل مطمئن ہوں۔');
+
+    setRegistrationDate(target.joiningDate || (target.createdAt ? target.createdAt.split('T')[0] : ''));
+    setCommitteePeriod(`${target.planMonths || 24} ماہ (Months)`);
+    setMonthlyInstallment(String(target.monthlyInstallment || 5000));
+    setTotalReceivedFigure(amt);
+    setTotalRefundFigure(amt);
+    setIssueDate(formattedDate);
+    setAdminSignature('Abdul Shakoor Madni (Admin)');
+    if (!silent) {
+      setStatusMessage({ type: 'success', text: 'Form Auto-filled with member details successfully.' });
     }
-  }, [isOpen, member?.id]);
+  };
+
+  const resetAllFields = (withDefaults: boolean = false) => {
+    const formattedDate = withDefaults ? formatDateDisplay(getTodayKarachiDate()) : '';
+    const autoVoucher = withDefaults ? `MZA-REF-${Date.now().toString().slice(-4)}` : '';
+    setVoucherNumber(autoVoucher);
+    setRefundDate(formattedDate);
+    setMemberName('');
+    setFatherName('');
+    setCnic('');
+    setMemberNumber('');
+    setGroupNumber('');
+    setPhone('');
+    setAddress('');
+    setArea('');
+    setSalutationName('');
+    setSalutationFather('');
+    setTotalCollectedAmount('');
+    setAmountInWordsEnglish('');
+    setAmountInWordsUrdu('');
+    setReceivedFigure('');
+    setReceivedWords('');
+    setQistDescription('');
+    setRefundReason('');
+    setMemberFeedback('');
+    setRegistrationDate('');
+    setCommitteePeriod('');
+    setMonthlyInstallment('');
+    setTotalReceivedFigure('');
+    setTotalRefundFigure('');
+    setIssueDate(formattedDate);
+    setAdminSignature('');
+    setMemberSignature('');
+    setEarlyExitConfirmed(false);
+    setStatusMessage(null);
+  };
+
+  // Lock background body scroll and initialize form cleanly on open / member / existingRefund change
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+
+    if (existingRefund) {
+      const linkedMember = members.find((m) => m.id === existingRefund.memberId) || member || null;
+      setSelectedMemberId(existingRefund.memberId || linkedMember?.id || '');
+      const amtStr = String(Number(existingRefund.refundAmount) || 0);
+      setVoucherNumber(existingRefund.refundVoucherNumber || `MZA-REF-${existingRefund.id.slice(-4)}`);
+      setRefundDate(existingRefund.refundDate || formatDateDisplay(existingRefund.createdAt));
+      setIssueDate(existingRefund.refundDate || formatDateDisplay(existingRefund.createdAt));
+      setMemberName(existingRefund.memberName || linkedMember?.fullName || '');
+      setFatherName(existingRefund.fatherName || linkedMember?.fatherName || '');
+      setCnic(existingRefund.cnic || linkedMember?.cnic || '');
+      setMemberNumber(existingRefund.memberNumber || linkedMember?.memberNumber || '');
+      setGroupNumber(existingRefund.groupNumber || linkedMember?.groupNumber || '');
+      setPhone(existingRefund.phone || linkedMember?.mobile || '');
+      setAddress(existingRefund.address || linkedMember?.address || '');
+      setArea(existingRefund.area || '');
+      setSalutationName(existingRefund.memberName || linkedMember?.fullName || '');
+      setSalutationFather(existingRefund.fatherName || linkedMember?.fatherName || '');
+      setTotalCollectedAmount(amtStr);
+      setReceivedFigure(amtStr);
+      setTotalReceivedFigure(amtStr);
+      setTotalRefundFigure(amtStr);
+      setAmountInWordsEnglish(
+        existingRefund.refundAmountInWordsEnglish || numberToWordsEnglish(Number(existingRefund.refundAmount) || 0)
+      );
+      setAmountInWordsUrdu(
+        existingRefund.refundAmountInWordsUrdu || numberToWordsUrdu(Number(existingRefund.refundAmount) || 0)
+      );
+      setReceivedWords(
+        existingRefund.refundAmountInWordsUrdu || numberToWordsUrdu(Number(existingRefund.refundAmount) || 0)
+      );
+      setQistDescription(existingRefund.installmentsDescription || '');
+      setRefundReason(existingRefund.reason || '');
+      setMemberFeedback(existingRefund.memberFeedback || '');
+      setRegistrationDate(linkedMember?.joiningDate || '');
+      setCommitteePeriod(linkedMember ? `${linkedMember.planMonths} ماہ (Months)` : '');
+      setMonthlyInstallment(linkedMember ? String(linkedMember.monthlyInstallment) : '');
+      setAdminSignature(existingRefund.adminSignature || '');
+      setMemberSignature(existingRefund.memberSignature || '');
+      setEarlyExitConfirmed(false);
+      setStatusMessage(null);
+    } else if (member) {
+      setSelectedMemberId(member.id);
+      fillFormFromMember(member, true);
+      setEarlyExitConfirmed(false);
+      setStatusMessage(null);
+    } else {
+      setSelectedMemberId('');
+      resetAllFields(true);
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [isOpen, member?.id, existingRefund?.id]);
 
   if (!isOpen) return null;
 
@@ -215,73 +337,21 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
     }
   };
 
-  // Quick fill from member details for admin convenience
+  // Quick fill from selected member details for admin convenience
   const handleAutofillFromMember = () => {
-    const formattedDate = formatDateDisplay(getTodayKarachiDate());
-    const autoVoucher = `MZA-REF-${Date.now().toString().slice(-4)}`;
-
-    setVoucherNumber(autoVoucher);
-    setRefundDate(formattedDate);
-    setMemberName(member?.fullName || 'محمد طلحہ خان');
-    setFatherName(member?.fatherName || 'عبد الرحمٰن');
-    setCnic(member?.cnic || '42401-8976543-1');
-    setMemberNumber(member?.memberNumber || '#FGN-085');
-    setGroupNumber(member?.groupNumber || (member ? `#GRP-${member.memberNumber.replace(/\D/g, '')}` : '#GRP-085'));
-    setPhone(member?.mobile || '0321-8924033');
-    setAddress(member?.address || 'House No. 37, Block 7, Clifton, Karachi');
-    setArea('کراچی / Karachi');
-
-    setSalutationName(member?.fullName || 'محمد طلحہ خان');
-    setSalutationFather(member?.fatherName || 'عبد الرحمٰن');
-
-    const amt = member && member.paidAmount > 0 ? String(member.paidAmount) : String(member?.totalCommitteeAmount || 120000);
-    handleAmountChange(amt);
-
-    setQistDescription(`قسط نمبر 1 تا ${member?.planMonths || 24} (مکمل امانت شدہ رقم کی واپسی)`);
-    setRefundReason('Member request / Committee plan cancellation voucher');
-    setMemberFeedback('انتظامیہ کے احسن سلوک اور بروقت امانت کی واپسی پر مکمل مطمئن ہوں۔');
-
-    setRegistrationDate(member?.joiningDate || (member?.createdAt ? member.createdAt.split('T')[0] : '2026-10-01'));
-    setCommitteePeriod(`${member?.planMonths || 24} ماہ (Months)`);
-    setMonthlyInstallment(String(member?.monthlyInstallment || 5000));
-    setTotalReceivedFigure(amt);
-    setTotalRefundFigure(amt);
-    setIssueDate(formattedDate);
-    setAdminSignature('Abdul Shakoor Madni (Admin)');
-    setStatusMessage({ type: 'success', text: 'Form Auto-filled with member details successfully.' });
+    if (!activeMember) {
+      setStatusMessage({
+        type: 'error',
+        text: 'برائے مہربانی پہلے فہرست سے کسی رجسٹرڈ ممبر کا انتخاب کریں (Please select a registered member first).',
+      });
+      return;
+    }
+    fillFormFromMember(activeMember, false);
   };
 
   // Clear all fields
   const handleClearAll = () => {
-    setVoucherNumber('');
-    setRefundDate('');
-    setMemberName('');
-    setFatherName('');
-    setCnic('');
-    setMemberNumber('');
-    setGroupNumber('');
-    setPhone('');
-    setAddress('');
-    setArea('');
-    setSalutationName('');
-    setSalutationFather('');
-    setTotalCollectedAmount('');
-    setAmountInWordsEnglish('');
-    setAmountInWordsUrdu('');
-    setReceivedFigure('');
-    setReceivedWords('');
-    setQistDescription('');
-    setRefundReason('');
-    setMemberFeedback('');
-    setRegistrationDate('');
-    setCommitteePeriod('');
-    setMonthlyInstallment('');
-    setTotalReceivedFigure('');
-    setTotalRefundFigure('');
-    setIssueDate('');
-    setAdminSignature('');
-    setMemberSignature('');
-    setEarlyExitConfirmed(false);
+    resetAllFields(false);
   };
 
   // Canvas Drawing Handlers
@@ -669,27 +739,46 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
   // Save Record into Firestore
   const handleSaveRecord = async (): Promise<boolean> => {
-    if (!member && !memberName) {
-      setStatusMessage({ type: 'error', text: 'Baraye mehrbani Member Name ya Member darj karein.' });
+    if (existingRefund) {
+      setStatusMessage({
+        type: 'error',
+        text: 'یہ ریفنڈ ریکارڈ پہلے ہی محفوظ ہو چکا ہے۔ آپ ڈاؤنلوڈ پی ڈی ایف بٹن استعمال کر سکتے ہیں۔',
+      });
       return false;
     }
 
-    const rawAmount = totalCollectedAmount || totalRefundFigure || (member ? String(member.paidAmount || 0) : '');
+    if (!activeMember) {
+      setStatusMessage({
+        type: 'error',
+        text: 'ڈیٹابیس میں ریفنڈ محفوظ کرنے کے لیے رجسٹرڈ ممبر منتخب کرنا ضروری ہے۔ خالی فارم صرف PDF ڈاؤنلوڈ کے لیے استعمال کیا جا سکتا ہے۔',
+      });
+      return false;
+    }
+
+    if (activeMember.status === 'Refunded') {
+      setStatusMessage({
+        type: 'error',
+        text: 'اس ممبر کا ریفنڈ پہلے ہی ریکارڈ ہو چکا ہے۔',
+      });
+      return false;
+    }
+
+    const rawAmount = totalCollectedAmount || totalRefundFigure || String(activeMember.paidAmount || 0);
     const numAmt = Number(String(rawAmount).replace(/,/g, '').trim());
     if (!Number.isFinite(numAmt) || numAmt <= 0) {
       setStatusMessage({ type: 'error', text: 'Baraye mehrbani sahi Refund Amount (> 0) darj karein.' });
       return false;
     }
 
-    if (member && numAmt > (member.paidAmount || 0)) {
+    if (numAmt > (activeMember.paidAmount || 0)) {
       setStatusMessage({
         type: 'error',
-        text: `Refund amount (${formatPKR(numAmt)}) member ki jama shuda raqam (${formatPKR(member.paidAmount || 0)}) se zyada nahi ho sakta.`,
+        text: `Refund amount (${formatPKR(numAmt)}) member ki jama shuda raqam (${formatPKR(activeMember.paidAmount || 0)}) se zyada nahi ho sakta.`,
       });
       return false;
     }
 
-    if (member && member.status === 'Active' && !earlyExitConfirmed) {
+    if (activeMember.status === 'Active' && !earlyExitConfirmed) {
       setStatusMessage({
         type: 'error',
         text: 'Active member ka refund save karne ke liye neeche diya gaya Early-Exit Confirmation checkbox lazmi tick karein.',
@@ -701,18 +790,17 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
       setIsSaving(true);
       setStatusMessage(null);
 
-      const targetMemberId = member ? member.id : `member_${Date.now()}`;
       const voucher = voucherNumber.trim() || `MZA-REF-${Date.now().toString().slice(-4)}`;
 
       const createdRefund = await recordRefund({
-        memberId: targetMemberId,
-        memberNumber: memberNumber || (member ? member.memberNumber : 'MZA-REF'),
-        memberName: memberName || (member ? member.fullName : 'Valued Member'),
-        fatherName: fatherName || (member ? member.fatherName : ''),
-        cnic: cnic || (member ? member.cnic : ''),
-        phone: phone || (member ? member.mobile : ''),
+        memberId: activeMember.id,
+        memberNumber: memberNumber || activeMember.memberNumber,
+        memberName: memberName || activeMember.fullName,
+        fatherName: fatherName || activeMember.fatherName,
+        cnic: cnic || activeMember.cnic,
+        phone: phone || activeMember.mobile,
         groupNumber: groupNumber || '',
-        address: address || '',
+        address: address || activeMember.address || '',
         area: area || '',
         refundAmount: numAmt,
         refundAmountInWordsEnglish: amountInWordsEnglish || '',
@@ -834,6 +922,41 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             >
               Dismiss
             </button>
+          </div>
+        )}
+
+        {/* Quick Member Picker when opened without pre-selected member */}
+        {!member && !existingRefund && members.length > 0 && (
+          <div className="bg-white border-b border-slate-200 px-4 py-2 flex flex-wrap items-center gap-2.5 text-xs shrink-0">
+            <span className="font-bold text-slate-700 flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>Select Registered Member:</span>
+            </span>
+            <select
+              value={selectedMemberId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedMemberId(id);
+                const found = members.find((m) => m.id === id);
+                if (found) {
+                  fillFormFromMember(found, true);
+                  setEarlyExitConfirmed(false);
+                  setStatusMessage(null);
+                } else {
+                  resetAllFields(true);
+                }
+              }}
+              className="px-2.5 py-1 text-xs font-bold border border-emerald-300 rounded-lg bg-emerald-50/50 text-emerald-950 focus:ring-2 focus:ring-emerald-500 max-w-xs"
+            >
+              <option value="">-- Choose Registered Member --</option>
+              {members
+                .filter((m) => m.status !== 'Refunded')
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.memberNumber} - {m.fullName} (Paid: {formatPKR(m.paidAmount || 0)})
+                  </option>
+                ))}
+            </select>
           </div>
         )}
 
@@ -1408,7 +1531,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
         </div>
 
         {/* Early-Exit Confirmation for Active Members */}
-        {member && member.status === 'Active' && (
+        {activeMember && activeMember.status === 'Active' && !existingRefund && (
           <div className="w-full bg-amber-50 border-t border-amber-300 px-3 sm:px-5 py-2.5 flex items-center justify-between gap-3 shrink-0" dir="rtl">
             <label className="flex items-center gap-2.5 cursor-pointer select-none text-xs font-bold text-amber-950">
               <input
@@ -1418,7 +1541,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
                 className="w-4 h-4 text-rose-600 border-amber-400 rounded focus:ring-rose-500 cursor-pointer shrink-0"
               />
               <span>
-                قبل از وقت اخراج کی تصدیق: یہ ممبر اس وقت <strong className="text-emerald-800">Active</strong> ہے (جمع شدہ رقم: {formatPKR(member.paidAmount)})۔ ریفنڈ محفوظ کرنے سے ممبرشپ مستقل طور پر <strong>Refunded</strong> ہو جائے گی۔{' '}
+                قبل از وقت اخراج کی تصدیق: یہ ممبر اس وقت <strong className="text-emerald-800">Active</strong> ہے (جمع شدہ رقم: {formatPKR(activeMember.paidAmount)})۔ ریفنڈ محفوظ کرنے سے ممبرشپ مستقل طور پر <strong>Refunded</strong> ہو جائے گی۔{' '}
                 <bdi dir="ltr" className="font-sans text-[11px] font-semibold text-amber-900">
                   (Early-exit confirmation required for Active member)
                 </bdi>
@@ -1447,15 +1570,17 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             <span>{isDownloadingPdf ? 'Generating...' : 'Download PDF'}</span>
           </button>
 
-          <button
-            type="button"
-            disabled={isSaving || isDownloadingPdf}
-            onClick={handleSaveAndDownload}
-            className="px-4 sm:px-5 py-2 text-xs font-bold text-white bg-[#064E3B] hover:bg-emerald-800 rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <CheckCircle2 className="w-4 h-4 text-amber-300" />
-            <span>Save Record & Download PDF</span>
-          </button>
+          {!existingRefund && (
+            <button
+              type="button"
+              disabled={isSaving || isDownloadingPdf}
+              onClick={handleSaveAndDownload}
+              className="px-4 sm:px-5 py-2 text-xs font-bold text-white bg-[#064E3B] hover:bg-emerald-800 rounded-xl flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <CheckCircle2 className="w-4 h-4 text-amber-300" />
+              <span>Save Record & Download PDF</span>
+            </button>
+          )}
         </div>
       </div>
 

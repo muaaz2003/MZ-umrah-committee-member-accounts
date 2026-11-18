@@ -77,7 +77,10 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [isSharingPdf, setIsSharingPdf] = useState(false);
   const [shareNotification, setShareNotification] = useState<string | null>(null);
+  const [whatsappFallbackUrl, setWhatsappFallbackUrl] = useState<string | null>(null);
   const printableFormRef = useRef<HTMLDivElement | null>(null);
+  const wasOpenRef = useRef(false);
+  const lastEditedIdRef = useRef<string | null>(null);
 
   // Generate PDF and Share via Web Share API or Fallback to WhatsApp
   const handleShareWhatsAppPDF = async () => {
@@ -156,17 +159,24 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         document.body.removeChild(link);
         URL.revokeObjectURL(downloadUrl);
 
-        // 2. Open WhatsApp Web or wa.me
+        // 2. Prepare WhatsApp Web / wa.me link without window.open
         const targetPhone = (whatsapp || mobile || '').replace(/[^0-9]/g, '');
         const waText = encodeURIComponent('السلام علیکم! یہ ممبر رجسٹریشن فارم کی پی ڈی ایف فائل ہے۔');
         const waUrl = targetPhone.length >= 10
           ? `https://wa.me/92${targetPhone.startsWith('0') ? targetPhone.slice(1) : targetPhone}?text=${waText}`
           : `https://web.whatsapp.com/send?text=${waText}`;
 
-        window.open(waUrl, '_blank');
+        setWhatsappFallbackUrl(waUrl);
+        const waAnchor = document.createElement('a');
+        waAnchor.href = waUrl;
+        waAnchor.target = '_blank';
+        waAnchor.rel = 'noopener noreferrer';
+        document.body.appendChild(waAnchor);
+        waAnchor.click();
+        document.body.removeChild(waAnchor);
 
         setShareNotification(
-          'پی ڈی ایف فائل ڈاؤن لوڈ کر لی گئی ہے۔ براؤزر میں ڈائریکٹ شیئر سپورٹ نہ ہونے کے باعث واٹس ایپ کھول دیا گیا ہے، براہ کرم ڈاؤن لوڈ شدہ پی ڈی ایف فائل اٹیچ کر کے بھیجیں۔'
+          'پی ڈی ایف فائل ڈاؤن لوڈ کر لی گئی ہے۔ واٹس ایپ لنک کھولنے کے لیے نیچے دیے گئے بٹن پر کلک کریں اور ڈاؤن لوڈ شدہ پی ڈی ایف فائل اٹیچ کر کے بھیجیں۔'
         );
       }
     } catch (err: any) {
@@ -181,78 +191,91 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
     }
   };
 
-  // Populate form if editing existing member, or generate next member number for new member
+  // Populate form only when modal opens or the target memberToEdit changes (never wipe active user typing)
   useEffect(() => {
-    if (isOpen) {
-      if (memberToEdit) {
-        // Edit mode - prefill existing member info
-        setMemberNumber(memberToEdit.memberNumber || 'MZA-#001');
-        setFullName(memberToEdit.fullName || '');
-        setFatherName(memberToEdit.fatherName || '');
-        setCnic(memberToEdit.cnic || '');
-        setMobile(memberToEdit.mobile || '');
-        setWhatsapp(memberToEdit.whatsapp || memberToEdit.mobile || '');
-        setAddress(memberToEdit.address || '');
-        setJoiningDate(memberToEdit.joiningDate || defaultJoining);
-        setFirstInstallmentDueDate(memberToEdit.firstInstallmentDueDate || defaultFirstDue);
-        setPlanMonths(memberToEdit.planMonths === 36 ? 36 : 24);
-        setMonthlyInstallment(memberToEdit.monthlyInstallment || 5000);
-        setRegistrationFee(
-          memberToEdit.registrationFeeStatus === 'Paid'
-            ? (Number(memberToEdit.registrationFee) || 0)
-            : fixedRegistrationFee
-        );
-        setRegistrationFeeReceived(memberToEdit.registrationFeeStatus === 'Paid');
-        setNomineeName(memberToEdit.nomineeName || '');
-        setNomineeRelation(memberToEdit.nomineeRelation || '');
-        setNomineeCnic(memberToEdit.nomineeCnic || '');
-        setNomineeMobile(memberToEdit.nomineeMobile || '');
-        setNotes(memberToEdit.notes || '');
-        setStatus(memberToEdit.status || 'Active');
-        setMemberPhoto(memberToEdit.memberPhoto || '');
-        setMemberAgreement(true);
-        setGuarantorAgreement(true);
-        setErrorMessage('');
-      } else {
-        // New member mode - reset form (registrationFeeStatus defaults to Unpaid)
-        setFullName('');
-        setFatherName('');
-        setCnic('');
-        setMobile('');
-        setWhatsapp('');
-        setAddress('');
-        setJoiningDate(defaultJoining);
-        setFirstInstallmentDueDate(defaultFirstDue);
-        setPlanMonths(24);
-        setMonthlyInstallment(5000);
-        setRegistrationFee(fixedRegistrationFee);
-        setRegistrationFeeReceived(false);
-        setNomineeName('');
-        setNomineeRelation('');
-        setNomineeCnic('');
-        setNomineeMobile('');
-        setNotes('');
-        setStatus('Active');
-        setMemberPhoto('');
-        setMemberAgreement(true);
-        setGuarantorAgreement(true);
-        setErrorMessage('');
-
-        if (existingMembers && existingMembers.length > 0) {
-          let maxNumber = 1;
-          for (const m of existingMembers) {
-            const match = m.memberNumber?.match(/(?:MZA|MZ)-#(\d+)/);
-            if (match) {
-              const num = parseInt(match[1], 10);
-              if (num >= maxNumber) maxNumber = num + 1;
-            }
-          }
-          setMemberNumber(`MZA-#${String(maxNumber).padStart(3, '0')}`);
-        }
-        peekNextMembershipNumber().then((num) => setMemberNumber(num));
-      }
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      lastEditedIdRef.current = null;
+      return;
     }
-  }, [isOpen, memberToEdit, existingMembers, fixedRegistrationFee]);
+
+    const currentEditId = memberToEdit?.id || null;
+    const shouldInitialize = !wasOpenRef.current || currentEditId !== lastEditedIdRef.current;
+    if (!shouldInitialize) return;
+
+    wasOpenRef.current = true;
+    lastEditedIdRef.current = currentEditId;
+    setShareNotification(null);
+    setWhatsappFallbackUrl(null);
+
+    if (memberToEdit) {
+      // Edit mode - prefill existing member info
+      setMemberNumber(memberToEdit.memberNumber || 'MZA-#001');
+      setFullName(memberToEdit.fullName || '');
+      setFatherName(memberToEdit.fatherName || '');
+      setCnic(memberToEdit.cnic || '');
+      setMobile(memberToEdit.mobile || '');
+      setWhatsapp(memberToEdit.whatsapp || memberToEdit.mobile || '');
+      setAddress(memberToEdit.address || '');
+      setJoiningDate(memberToEdit.joiningDate || defaultJoining);
+      setFirstInstallmentDueDate(memberToEdit.firstInstallmentDueDate || defaultFirstDue);
+      setPlanMonths(memberToEdit.planMonths === 36 ? 36 : 24);
+      setMonthlyInstallment(memberToEdit.monthlyInstallment || 5000);
+      setRegistrationFee(
+        memberToEdit.registrationFeeStatus === 'Paid'
+          ? (Number(memberToEdit.registrationFee) || 0)
+          : fixedRegistrationFee
+      );
+      setRegistrationFeeReceived(memberToEdit.registrationFeeStatus === 'Paid');
+      setNomineeName(memberToEdit.nomineeName || '');
+      setNomineeRelation(memberToEdit.nomineeRelation || '');
+      setNomineeCnic(memberToEdit.nomineeCnic || '');
+      setNomineeMobile(memberToEdit.nomineeMobile || '');
+      setNotes(memberToEdit.notes || '');
+      setStatus(memberToEdit.status || 'Active');
+      setMemberPhoto(memberToEdit.memberPhoto || '');
+      setMemberAgreement(true);
+      setGuarantorAgreement(true);
+      setErrorMessage('');
+    } else {
+      // New member mode - reset form (registrationFeeStatus defaults to Unpaid)
+      setFullName('');
+      setFatherName('');
+      setCnic('');
+      setMobile('');
+      setWhatsapp('');
+      setAddress('');
+      setJoiningDate(defaultJoining);
+      setFirstInstallmentDueDate(defaultFirstDue);
+      setPlanMonths(24);
+      setMonthlyInstallment(5000);
+      setRegistrationFee(fixedRegistrationFee);
+      setRegistrationFeeReceived(false);
+      setNomineeName('');
+      setNomineeRelation('');
+      setNomineeCnic('');
+      setNomineeMobile('');
+      setNotes('');
+      setStatus('Active');
+      setMemberPhoto('');
+      setMemberAgreement(true);
+      setGuarantorAgreement(true);
+      setErrorMessage('');
+
+      if (existingMembers && existingMembers.length > 0) {
+        let maxNumber = 1;
+        for (const m of existingMembers) {
+          const match = m.memberNumber?.match(/(?:MZA|MZ)-#(\d+)/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num >= maxNumber) maxNumber = num + 1;
+          }
+        }
+        setMemberNumber(`MZA-#${String(maxNumber).padStart(3, '0')}`);
+      }
+      peekNextMembershipNumber().then((num) => setMemberNumber(num));
+    }
+  }, [isOpen, memberToEdit, existingMembers, fixedRegistrationFee, defaultJoining, defaultFirstDue]);
 
   // Lock background body scroll when modal is open so only the form scrolls
   useEffect(() => {
@@ -526,14 +549,28 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
           {shareNotification && (
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-xs font-semibold text-emerald-950 flex items-center justify-between gap-2 text-right shadow-2xs font-urdu" dir="rtl">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-700" />
                 <span>{shareNotification}</span>
+                {whatsappFallbackUrl && (
+                  <a
+                    href={whatsappFallbackUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#25D366] text-white font-bold text-[11px] shadow-2xs hover:opacity-95"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span>واٹس ایپ کھولیں</span>
+                  </a>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => setShareNotification(null)}
-                className="text-emerald-800 hover:text-emerald-950 font-bold px-2 py-0.5 cursor-pointer text-sm"
+                onClick={() => {
+                  setShareNotification(null);
+                  setWhatsappFallbackUrl(null);
+                }}
+                className="text-emerald-800 hover:text-emerald-950 font-bold px-2 py-0.5 cursor-pointer text-sm shrink-0"
                 aria-label="Close notification"
               >
                 ✕

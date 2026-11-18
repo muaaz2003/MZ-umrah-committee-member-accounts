@@ -18,10 +18,35 @@ import {
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import { Member, CancellationNotice } from '../types';
-import { recordCancellationNotice } from '../services/firebaseService';
+import { recordCancellationNotice, updateCancellationNotice } from '../services/firebaseService';
 import { formatPKR, getTodayKarachiDate, numberToWordsUrdu } from '../utils/calculations';
 import mzaLogo from '../assets/images/mza-logo.png';
 import mzaStamp from '../assets/images/mza-stamp.png';
+
+async function ensureUrduFontsLoaded(): Promise<void> {
+  if (typeof window === 'undefined' || !('fonts' in document)) return;
+  try {
+    const fontFaces = [
+      new FontFace('Noto Nastaliq Urdu', 'url(/fonts/NotoNastaliqUrdu-Regular.ttf)', { weight: '400' }),
+      new FontFace('Noto Nastaliq Urdu', 'url(/fonts/NotoNastaliqUrdu-Regular.ttf)', { weight: '700' }),
+      new FontFace('Noto Naskh Arabic', 'url(/fonts/NotoNaskhArabic-Regular.ttf)', { weight: '400' }),
+      new FontFace('Noto Naskh Arabic', 'url(/fonts/NotoNaskhArabic-Regular.ttf)', { weight: '700' }),
+    ];
+    await Promise.all(
+      fontFaces.map(async (f) => {
+        try {
+          const loaded = await f.load();
+          document.fonts.add(loaded);
+        } catch {
+          // Already registered or cached
+        }
+      })
+    );
+  } catch (err) {
+    console.warn('FontFace registration note:', err);
+  }
+  await document.fonts.ready;
+}
 
 interface CancellationModalProps {
   isOpen: boolean;
@@ -69,9 +94,23 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
 
   const printNoticeRef = useRef<HTMLDivElement>(null);
 
+  // Lock background body scroll when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [isOpen]);
+
   // Initialize or Autofill
   useEffect(() => {
     if (!isOpen) return;
+    setStatusMessage(null);
 
     if (existingNotice) {
       setSelectedMemberId(existingNotice.memberId || '');
@@ -87,11 +126,13 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
       setSubject(existingNotice.subject || 'عمرہ کمیٹی کی ممبرشپ کی منسوخی');
       setPlanMonths(existingNotice.planMonths || 24);
       setInstallmentAmount(existingNotice.installmentAmount || 5000);
-      setFirstInstallmentPaidAmount(existingNotice.firstInstallmentPaidAmount || 5000);
-      setPaidInstallmentsCount(existingNotice.paidInstallmentsCount || 1);
-      setRemainingInstallmentsCount(existingNotice.remainingInstallmentsCount || 23);
-      setRefundAmount(existingNotice.refundAmount || 5000);
-      setRefundAmountWords(existingNotice.refundAmountInWordsUrdu || numberToWordsUrdu(existingNotice.refundAmount || 5000));
+      setFirstInstallmentPaidAmount(existingNotice.firstInstallmentPaidAmount ?? 0);
+      setPaidInstallmentsCount(existingNotice.paidInstallmentsCount ?? 0);
+      setRemainingInstallmentsCount(existingNotice.remainingInstallmentsCount ?? 0);
+      setRefundAmount(existingNotice.refundAmount ?? 0);
+      setRefundAmountWords(
+        existingNotice.refundAmountInWordsUrdu || numberToWordsUrdu(existingNotice.refundAmount ?? 0)
+      );
       setIssuedBy(existingNotice.issuedBy || 'انتظامیہ عمرہ کمیٹی');
       return;
     }
@@ -110,6 +151,11 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
   }, [isOpen, initialMember, existingNotice]);
 
   const resetFields = () => {
+    const todayStr = getTodayKarachiDate();
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    setNoticeNumber(`MZA-CAN-${randomSuffix}`);
+    setNoticeDate(todayStr);
+    setSubject('عمرہ کمیٹی کی ممبرشپ کی منسوخی');
     setSelectedMemberId('');
     setSalutation('محترم جناب');
     setFullName('');
@@ -126,6 +172,8 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
     setRefundAmount(5000);
     setRefundAmountWords(numberToWordsUrdu(5000));
     setIssuedBy('انتظامیہ عمرہ کمیٹی');
+    setUpdateMemberStatus(true);
+    setStatusMessage(null);
   };
 
   const applyMemberData = (m: Member) => {
@@ -150,17 +198,16 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
     setPlanMonths(totalPlan);
     const monthlyAmt = m.monthlyInstallment || 5000;
     setInstallmentAmount(monthlyAmt);
-    setFirstInstallmentPaidAmount(monthlyAmt);
 
-    const calculatedPaidCount = monthlyAmt > 0 ? Math.floor((m.paidAmount || 0) / monthlyAmt) : 1;
-    const paidCount = calculatedPaidCount > 0 ? calculatedPaidCount : 1;
+    const paid = Number(m.paidAmount) || 0;
+    const paidCount = paid > 0 && monthlyAmt > 0 ? Math.floor(paid / monthlyAmt) : 0;
     setPaidInstallmentsCount(paidCount);
     const remCount = Math.max(0, totalPlan - paidCount);
     setRemainingInstallmentsCount(remCount);
+    setFirstInstallmentPaidAmount(paid > 0 ? Math.min(monthlyAmt, paid) : 0);
 
-    const refund = m.paidAmount && m.paidAmount > 0 ? m.paidAmount : monthlyAmt;
-    setRefundAmount(refund);
-    setRefundAmountWords(numberToWordsUrdu(refund));
+    setRefundAmount(paid);
+    setRefundAmountWords(numberToWordsUrdu(paid));
   };
 
   const handleMemberSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -223,13 +270,20 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
         refundAmount,
         refundAmountInWordsUrdu: refundAmountWords.trim(),
         issuedBy: issuedBy.trim(),
-        status: 'Issued' as const,
+        status: existingNotice?.status || ('Issued' as const),
       };
 
-      const savedNotice = await recordCancellationNotice(noticeData, updateMemberStatus, currentUserEmail);
+      const savedNotice = existingNotice
+        ? await updateCancellationNotice(existingNotice.id, noticeData, updateMemberStatus, currentUserEmail)
+        : await recordCancellationNotice(noticeData, updateMemberStatus, currentUserEmail);
 
       setIsSubmitting(false);
-      setStatusMessage({ type: 'success', text: 'کینسلیشن نوٹس کامیابی سے محفوظ اور ریکارڈ ہو گیا۔' });
+      setStatusMessage({
+        type: 'success',
+        text: existingNotice
+          ? 'کینسلیشن نوٹس کامیابی سے اپ ڈیٹ ہو گیا۔'
+          : 'کینسلیشن نوٹس کامیابی سے محفوظ اور ریکارڈ ہو گیا۔',
+      });
 
       if (onSuccess && savedNotice) {
         onSuccess(savedNotice);
@@ -251,29 +305,31 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
     let stagingContainer: HTMLDivElement | null = null;
 
     try {
+      await ensureUrduFontsLoaded();
+
       const element = printNoticeRef.current;
       const A4_LAYOUT_WIDTH = 800;
 
       // 1. Create a dedicated off-screen staging container attached to body
-      // This isolates the PDF generation completely from the modal's scroll/overflow boundaries and mobile screen widths
       stagingContainer = document.createElement('div');
       stagingContainer.id = 'cancellation-pdf-staging-root';
       stagingContainer.style.position = 'fixed';
       stagingContainer.style.top = '0';
-      stagingContainer.style.left = '0';
+      stagingContainer.style.left = '-10000px';
       stagingContainer.style.width = `${A4_LAYOUT_WIDTH}px`;
       stagingContainer.style.maxWidth = `${A4_LAYOUT_WIDTH}px`;
       stagingContainer.style.minWidth = `${A4_LAYOUT_WIDTH}px`;
       stagingContainer.style.backgroundColor = '#ffffff';
-      stagingContainer.style.zIndex = '-9999';
+      stagingContainer.style.zIndex = '1';
       stagingContainer.style.opacity = '1';
       stagingContainer.style.pointerEvents = 'none';
       stagingContainer.style.overflow = 'visible';
       stagingContainer.style.boxSizing = 'border-box';
 
-      // 2. Clone the notice element
+      // 2. Clone the notice element with unique ID and remove embedded <style> tags
       const clone = element.cloneNode(true) as HTMLElement;
-      clone.id = 'cancellation-paper-container';
+      clone.id = 'cancellation-paper-pdf-clone';
+      clone.querySelectorAll('style').forEach((s) => s.remove());
       clone.style.width = `${A4_LAYOUT_WIDTH}px`;
       clone.style.minWidth = `${A4_LAYOUT_WIDTH}px`;
       clone.style.maxWidth = `${A4_LAYOUT_WIDTH}px`;
@@ -288,16 +344,40 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
       clone.style.border = '1px solid #cbd5e1';
       clone.style.backgroundColor = '#ffffff';
 
-      // Inject PDF-specific fonts and baseline styles
+      // Inject PDF-specific local fonts and baseline styles (no external Google Fonts network @import)
       const fontStyle = document.createElement('style');
       fontStyle.textContent = `
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
+        @font-face {
+          font-family: 'Noto Nastaliq Urdu';
+          src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+          font-weight: 400;
+          font-style: normal;
+        }
+        @font-face {
+          font-family: 'Noto Nastaliq Urdu';
+          src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype');
+          font-weight: 700;
+          font-style: normal;
+        }
+        @font-face {
+          font-family: 'Noto Naskh Arabic';
+          src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+          font-weight: 400;
+          font-style: normal;
+        }
+        @font-face {
+          font-family: 'Noto Naskh Arabic';
+          src: url('/fonts/NotoNaskhArabic-Regular.ttf') format('truetype');
+          font-weight: 700;
+          font-style: normal;
+        }
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         .pdf-cloned-control-replacement {
           box-sizing: border-box !important;
           letter-spacing: 0px !important;
           word-break: break-word !important;
         }
+        #cancellation-paper-pdf-clone .cancellation-urdu-main-heading,
         .cancellation-urdu-main-heading {
           font-family: 'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif !important;
           letter-spacing: 0px !important;
@@ -392,6 +472,26 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
       stagingContainer.appendChild(clone);
       document.body.appendChild(stagingContainer);
 
+      // Ensure all images inside the cloned paper are completely loaded/decoded
+      const cloneImgs = Array.from(clone.querySelectorAll('img'));
+      await Promise.all(
+        cloneImgs.map(async (img) => {
+          if (!img.complete) {
+            await new Promise<void>((resolve) => {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            });
+          }
+          if (typeof img.decode === 'function') {
+            try {
+              await img.decode();
+            } catch {
+              // ignore decode errors
+            }
+          }
+        })
+      );
+
       // Wait for fonts to be ready
       if (document.fonts) {
         try {
@@ -402,15 +502,15 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
       }
 
       // Small tick for layout calculation
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       // Calculate the true rendered height of the complete form document
       const fullContentHeight = Math.ceil(
-        Math.max(clone.getBoundingClientRect().height, clone.scrollHeight, clone.offsetHeight)
+        Math.max(clone.getBoundingClientRect().height, clone.scrollHeight, clone.offsetHeight, 100)
       );
 
       const canvas = await html2canvas(clone, {
-        scale: 2.5,
+        scale: 2.2,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
@@ -423,6 +523,10 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
         scrollX: 0,
         scrollY: 0,
       });
+
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error('Generated PDF canvas is empty');
+      }
 
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
@@ -453,10 +557,15 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
 
       setIsDownloadingPdf(false);
       setStatusMessage({ type: 'success', text: 'پی ڈی ایف کامیابی سے ڈاؤنلوڈ ہو گئی۔ پورا صفحہ مکمل طور پر شامل ہے۔' });
-    } catch (err) {
+    } catch (err: any) {
       console.error('PDF generation error:', err);
       setIsDownloadingPdf(false);
-      setStatusMessage({ type: 'error', text: 'پی ڈی ایف جنریٹ کرنے میں غلطی ہوئی۔ برائے مہربانی دوبارہ کوشش کریں۔' });
+      setStatusMessage({
+        type: 'error',
+        text: err?.message
+          ? `پی ڈی ایف جنریٹ کرنے میں غلطی ہوئی: ${err.message}`
+          : 'پی ڈی ایف جنریٹ کرنے میں غلطی ہوئی۔ برائے مہربانی دوبارہ کوشش کریں۔',
+      });
     } finally {
       if (stagingContainer && stagingContainer.parentNode) {
         document.body.removeChild(stagingContainer);
@@ -642,8 +751,6 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
           >
             {/* Scoped CSS strictly limited to this Cancellation Notice form */}
             <style>{`
-              @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&display=swap');
-              
               #cancellation-paper-container .cancellation-urdu-main-heading,
               .cancellation-urdu-main-heading {
                 font-family: 'Noto Naskh Arabic', 'Amiri', 'Traditional Arabic', serif !important;
@@ -672,11 +779,6 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
               #cancellation-paper-container .cancellation-field-input.py-0 {
                 padding-top: 0 !important;
                 padding-bottom: 0 !important;
-                line-height: 2.7 !important;
-              }
-
-              #cancellation-paper-container .leading-\[2\.7\],
-              #cancellation-paper-container .cancellation-field-input.leading-\[2\.7\] {
                 line-height: 2.7 !important;
               }
 

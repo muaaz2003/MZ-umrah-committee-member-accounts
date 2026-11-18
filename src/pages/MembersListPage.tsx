@@ -56,10 +56,10 @@ export const MembersListPage: React.FC<MembersListPageProps> = ({
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const match =
-        m.fullName.toLowerCase().includes(q) ||
-        m.memberNumber.toLowerCase().includes(q) ||
-        m.mobile.toLowerCase().includes(q) ||
-        m.cnic.toLowerCase().includes(q);
+        (m.fullName || '').toLowerCase().includes(q) ||
+        (m.memberNumber || '').toLowerCase().includes(q) ||
+        (m.mobile || '').toLowerCase().includes(q) ||
+        (m.cnic || '').toLowerCase().includes(q);
       if (!match) return false;
     }
     return true;
@@ -118,8 +118,8 @@ export const MembersListPage: React.FC<MembersListPageProps> = ({
             className="px-3 py-2 text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-600"
           >
             <option value="all">All Plans (24M & 36M)</option>
-            <option value="24">24 Months (Plan A - 120k)</option>
-            <option value="36">36 Months (Plan B - 180k)</option>
+            <option value="24">Plan A — 24 Months</option>
+            <option value="36">Plan B — 36 Months</option>
           </select>
 
           {/* Status Filter */}
@@ -224,7 +224,15 @@ export const MembersListPage: React.FC<MembersListPageProps> = ({
                   </td>
                   <td className="py-3 px-4 text-center">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      m.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                      m.status === 'Active'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : m.status === 'Completed'
+                        ? 'bg-blue-100 text-blue-800'
+                        : m.status === 'Refunded'
+                        ? 'bg-amber-100 text-amber-800'
+                        : m.status === 'Cancelled'
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-slate-100 text-slate-700'
                     }`}>
                       {m.status}
                     </span>

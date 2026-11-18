@@ -32,14 +32,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   receipt,
   isDuplicate = false,
 }) => {
-  const [copySuccess, setCopySuccess] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const [whatsappFallbackUrl, setWhatsappFallbackUrl] = useState<string | null>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
 
-  // Lock background body scroll when receipt modal is open
+  // Lock background body scroll and clear stale notification when receipt modal opens/changes
   useEffect(() => {
     if (isOpen) {
+      setNotificationMessage(null);
+      setWhatsappFallbackUrl(null);
       const originalOverflow = document.body.style.overflow;
       const originalTouchAction = document.body.style.touchAction;
       document.body.style.overflow = 'hidden';
@@ -49,9 +51,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         document.body.style.touchAction = originalTouchAction;
       };
     }
-  }, [isOpen]);
+  }, [isOpen, receipt?.id]);
 
   if (!isOpen || !receipt) return null;
+
+  const isManual = receipt.memberId?.startsWith('manual_') || receipt.planMonths === 1;
 
   const handleShareWhatsAppPDF = async () => {
     if (!receipt || !receiptRef.current) return;
@@ -131,15 +135,22 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         document.body.removeChild(link);
         URL.revokeObjectURL(downloadUrl);
 
-        // 2. Open WhatsApp Web / wa.me directly to member's phone number
+        // 2. Prepare WhatsApp Web / wa.me link without window.open
         const waUrl = cleanPhone.length >= 10
           ? `https://wa.me/${cleanPhone}?text=${waEncoded}`
           : `https://web.whatsapp.com/send?text=${waEncoded}`;
 
-        window.open(waUrl, '_blank');
+        setWhatsappFallbackUrl(waUrl);
+        const waAnchor = document.createElement('a');
+        waAnchor.href = waUrl;
+        waAnchor.target = '_blank';
+        waAnchor.rel = 'noopener noreferrer';
+        document.body.appendChild(waAnchor);
+        waAnchor.click();
+        document.body.removeChild(waAnchor);
 
         setNotificationMessage(
-          'پی ڈی ایف رسید ڈاؤن لوڈ کر لی گئی ہے اور ممبر کا واٹس ایپ کھل گیا ہے۔ براہ کرم ڈاؤن لوڈ شدہ رسید فائل اٹیچ کر کے بھیج دیں۔'
+          'پی ڈی ایف رسید ڈاؤن لوڈ کر لی گئی ہے۔ واٹس ایپ کھولنے کے لیے بٹن پر کلک کریں اور ڈاؤن لوڈ شدہ رسید فائل اٹیچ کر کے بھیج دیں۔'
         );
       }
     } catch (err: any) {
@@ -206,14 +217,28 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         {/* Status Notification Banner */}
         {notificationMessage && (
           <div className="no-print bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-950 flex items-center justify-between gap-2 font-urdu" dir="rtl">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
               <span>{notificationMessage}</span>
+              {whatsappFallbackUrl && (
+                <a
+                  href={whatsappFallbackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#25D366] text-white font-bold text-[11px] shadow-2xs hover:opacity-95"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>واٹس ایپ کھولیں</span>
+                </a>
+              )}
             </div>
             <button
               type="button"
-              onClick={() => setNotificationMessage(null)}
-              className="text-emerald-800 hover:text-emerald-950 font-bold px-2 py-0.5 cursor-pointer text-xs"
+              onClick={() => {
+                setNotificationMessage(null);
+                setWhatsappFallbackUrl(null);
+              }}
+              className="text-emerald-800 hover:text-emerald-950 font-bold px-2 py-0.5 cursor-pointer text-xs shrink-0"
             >
               ✕
             </button>
@@ -312,7 +337,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-500">Committee Plan: </span>
-                  <span className="font-bold text-emerald-900">{receipt.planMonths} Months Plan</span>
+                  <span className="font-bold text-emerald-900">
+                    {isManual ? 'Manual Receipt / دستی رسید' : `${receipt.planMonths} Months Plan`}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-500">Registration Fee: </span>
@@ -376,14 +403,18 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                     )}
                     <div className="flex items-baseline justify-between gap-3 font-semibold text-slate-700">
                       <p>
-                        {complete
-                          ? `${instTextEn} of ${receipt.planMonths} | Committee mukammal`
-                          : `${instTextEn} of ${receipt.planMonths} | Baqi qisten: ${baqi}`}
+                        {isManual
+                          ? `${instTextEn} | Manual Receipt`
+                          : complete
+                            ? `${instTextEn} of ${receipt.planMonths} | Committee mukammal`
+                            : `${instTextEn} of ${receipt.planMonths} | Baqi qisten: ${baqi}`}
                       </p>
                       <p className="font-urdu text-[12px] leading-[2]" dir="rtl">
-                        {complete
-                          ? `قسط #${instNumsUrdu} از ${receipt.planMonths} | کمیٹی مکمل`
-                          : `قسط #${instNumsUrdu} از ${receipt.planMonths} | باقی اقساط: ${baqi}`}
+                        {isManual
+                          ? `${receipt.installmentDescription || 'دستی وصولی رسید'}`
+                          : complete
+                            ? `قسط #${instNumsUrdu} از ${receipt.planMonths} | کمیٹی مکمل`
+                            : `قسط #${instNumsUrdu} از ${receipt.planMonths} | باقی اقساط: ${baqi}`}
                       </p>
                     </div>
                   </div>

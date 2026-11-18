@@ -264,7 +264,9 @@ export async function getMembers(): Promise<Member[]> {
   try {
     const snap = await getDocs(collection(db, path));
     const members = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Member) }));
-    const sorted = members.sort((a, b) => (a.memberNumber > b.memberNumber ? 1 : -1));
+    const sorted = members.sort((a, b) =>
+      (a.memberNumber || '').localeCompare(b.memberNumber || '', undefined, { numeric: true })
+    );
     try {
       localStorage.setItem('mz_cached_members', JSON.stringify(stripPhotosForCache(sorted)));
     } catch {}
@@ -516,7 +518,7 @@ export async function updateMember(
     for (let num = 1; num <= targetPlan; num++) {
       if (!existingNumbers.has(num)) {
         const dueDate = calculateInstallmentDueDate(firstDueDate, num, 10);
-        const instId = `inst_${memberId}_${String(num).padStart(2, '0')}`;
+        const instId = `inst_${memberId}_${num}`;
         const newInst: Installment = {
           id: instId,
           memberId,
@@ -1139,7 +1141,10 @@ export async function recalculateMemberInstallmentsAndFinancials(memberId: strin
     const coveredNums: number[] = [];
     for (const inst of sortedInsts) {
       const currentInst = instMap.get(inst.installmentNumber)!;
-      if (currentInst.receiptNumber && currentInst.receiptNumber.includes(r.receiptNumber)) {
+      if (
+        currentInst.receiptNumber &&
+        currentInst.receiptNumber.split(',').map((s) => s.trim()).includes(r.receiptNumber)
+      ) {
         coveredNums.push(inst.installmentNumber);
       }
     }
@@ -1379,27 +1384,35 @@ export async function recordManualPayment(payload: RecordManualPaymentPayload): 
   }
 
   const receiptNumber = await getNextReceiptNumber();
-  const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const receiptId = `rcp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const manualTs = Date.now();
+  const randSuffix = Math.random().toString(36).substring(2, 6);
+  const paymentId = `pay_${manualTs}_${randSuffix}`;
+  const receiptId = `rcp_${manualTs}_${randSuffix}`;
+  const manualMemberId = `manual_${manualTs}`;
+  const manualInstId = `manual_inst_${manualTs}`;
   const now = new Date().toISOString();
   const instNum = payload.installmentNumber || 1;
+  const instDesc = payload.installmentDescription || 'دستی وصولی';
 
-  const memberNumber = payload.memberNumber || `MZA-M-${Date.now().toString().slice(-4)}`;
+  const memberNumber = payload.memberNumber || `MZA-M-${String(manualTs).slice(-4)}`;
 
   const paymentRecord: Payment = {
     id: paymentId,
-    memberId: `manual_${Date.now()}`,
+    memberId: manualMemberId,
     memberNumber,
     memberName: payload.memberName,
-    installmentId: `manual_inst_${Date.now()}`,
+    installmentId: manualInstId,
     installmentNumber: instNum,
+    installmentsCovered: [instNum],
+    installmentDescription: instDesc,
     receiptId,
     receiptNumber,
-    amountReceived: payload.amountReceived,
+    amountReceived: manualAmt,
+    amount: manualAmt,
     paymentMethod: payload.paymentMethod,
     paymentDate: payload.paymentDate,
     referenceNumber: payload.referenceNumber || '',
-    notes: payload.notes || payload.installmentDescription || 'دستی وصولی',
+    notes: payload.notes || instDesc,
     collectedBy: payload.collectedBy,
     allocationType: 'current',
     createdAt: now,
@@ -1408,28 +1421,30 @@ export async function recordManualPayment(payload: RecordManualPaymentPayload): 
   const receiptRecord: Receipt = {
     id: receiptId,
     receiptNumber,
-    memberId: `manual_${Date.now()}`,
+    memberId: manualMemberId,
     memberNumber,
     memberName: payload.memberName,
     fatherName: payload.fatherName || '—',
     mobile: payload.mobile || '—',
     address: 'دستی اندراج / Manual Entry',
-    planMonths: 20,
+    planMonths: 1,
     paymentId,
     installmentNumber: instNum,
+    installmentsCovered: [instNum],
+    installmentDescription: instDesc,
     dueDate: payload.paymentDate,
-    amount: payload.amountReceived,
+    amount: manualAmt,
     paymentDate: payload.paymentDate,
     paymentMethod: payload.paymentMethod,
     previousPaidAmount: 0,
-    currentPayment: payload.amountReceived,
+    currentPayment: manualAmt,
     remainingBalance: 0,
     advanceAmount: 0,
-    totalCommitteeAmount: payload.amountReceived,
-    totalPaidAmount: payload.amountReceived,
+    totalCommitteeAmount: manualAmt,
+    totalPaidAmount: manualAmt,
     totalDueAmount: 0,
     registrationFeeStatus: 'Paid',
-    notes: payload.notes || payload.installmentDescription || '',
+    notes: payload.notes || instDesc,
     referenceNumber: payload.referenceNumber || '',
     generatedBy: payload.collectedBy,
     verificationStatus: 'Verified',
@@ -1605,12 +1620,14 @@ export async function recordCancellationNotice(
   batch.set(doc(db, 'cancellations', canId), removeUndefined(noticeRecord));
 
   if (updateMemberStatus && data.memberId) {
+    const member = await getMemberById(data.memberId);
+    const noteLine = `Cancellation Notice #${data.noticeNumber} issued on ${data.noticeDate}. Refunded Rs. ${data.refundAmount}`;
     const memberRef = doc(db, 'members', data.memberId);
     batch.update(
       memberRef,
       removeUndefined({
         status: 'Cancelled',
-        notes: `Cancellation Notice #${data.noticeNumber} issued on ${data.noticeDate}. Refunded Rs. ${data.refundAmount}`,
+        notes: member?.notes ? `${member.notes} | ${noteLine}` : noteLine,
         updatedAt: now,
       })
     );
@@ -1629,6 +1646,61 @@ export async function recordCancellationNotice(
     return noticeRecord;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'cancellations');
+  }
+}
+
+export async function updateCancellationNotice(
+  id: string,
+  data: Partial<CancellationNotice>,
+  updateMemberStatus: boolean = true,
+  userEmail: string = 'admin'
+): Promise<CancellationNotice> {
+  const path = `cancellations/${id}`;
+  const docRef = doc(db, 'cancellations', id);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) {
+    throw new Error('منسوخی نوٹس کا ریکارڈ نہیں ملا۔');
+  }
+  const existing = snap.data() as CancellationNotice;
+  const now = new Date().toISOString();
+
+  const updatedRecord = removeUndefined<CancellationNotice>({
+    ...existing,
+    ...data,
+    id,
+  });
+
+  const batch = writeBatch(db);
+  batch.set(docRef, updatedRecord, { merge: true });
+
+  if (updateMemberStatus && updatedRecord.memberId) {
+    const member = await getMemberById(updatedRecord.memberId);
+    if (member && member.status !== 'Cancelled') {
+      const noteLine = `Cancellation Notice #${updatedRecord.noticeNumber} updated on ${updatedRecord.noticeDate}. Refunded Rs. ${updatedRecord.refundAmount}`;
+      batch.update(
+        doc(db, 'members', updatedRecord.memberId),
+        removeUndefined({
+          status: 'Cancelled',
+          notes: member.notes ? `${member.notes} | ${noteLine}` : noteLine,
+          updatedAt: now,
+        })
+      );
+    }
+  }
+
+  try {
+    await batch.commit();
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'UPDATE_CANCELLATION',
+      'Cancellation',
+      id,
+      `Updated cancellation notice #${updatedRecord.noticeNumber} for ${updatedRecord.fullName}.`
+    );
+    return updatedRecord;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -1692,18 +1764,20 @@ export async function recordQarzaAgreement(
         `صرف فعال (Active) یا مکمل (Completed) ممبر کو قرضِ حسنہ جاری کیا جا سکتا ہے۔ اس ممبر کا اسٹیٹس ${member.status} ہے۔`
       );
     }
+  }
 
+  if (data.memberId || borrowerCnicNorm) {
     const activeLoansSnap = await getDocs(
       query(collection(db, 'qarzaHasana'), where('status', '==', 'Active'))
     );
     const hasActiveLoan = activeLoansSnap.docs.some((d) => {
       const a = d.data() as QarzaHasanaAgreement;
-      if (a.memberId && a.memberId === data.memberId) return true;
+      if (data.memberId && a.memberId && a.memberId === data.memberId) return true;
       if (borrowerCnicNorm && normalizeCnicDigits(a.cnic) === borrowerCnicNorm) return true;
       return false;
     });
     if (hasActiveLoan) {
-      throw new Error('اس ممبر کے نام پر پہلے سے ایک فعال (Active) قرضِ حسنہ جاری ہے، نیا قرض جاری نہیں ہو سکتا۔');
+      throw new Error('اس فرد/ممبر کے نام پر پہلے سے ایک فعال (Active) قرضِ حسنہ جاری ہے، نیا قرض جاری نہیں ہو سکتا۔');
     }
   }
 
@@ -1735,6 +1809,62 @@ export async function recordQarzaAgreement(
     return agreementRecord;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function updateQarzaAgreement(
+  id: string,
+  data: Partial<QarzaHasanaAgreement>,
+  userEmail: string = 'admin'
+): Promise<QarzaHasanaAgreement> {
+  const path = `qarzaHasana/${id}`;
+  const docRef = doc(db, 'qarzaHasana', id);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) {
+    throw new Error('قرضِ حسنہ کا ریکارڈ نہیں ملا۔');
+  }
+  const existing = snap.data() as QarzaHasanaAgreement;
+
+  const loanAmt = data.loanAmount !== undefined ? Number(data.loanAmount) : Number(existing.loanAmount);
+  if (!Number.isFinite(loanAmt) || loanAmt <= 0 || loanAmt > 20000) {
+    throw new Error('قرضِ حسنہ کی رقم 1 روپے سے 20,000 روپے کے درمیان ہونی چاہیے۔');
+  }
+
+  const borrowerCnicNorm = normalizeCnicDigits(data.cnic ?? existing.cnic);
+  const guarantorCnicNorm = normalizeCnicDigits(data.guarantorCnic ?? existing.guarantorCnic);
+  if (borrowerCnicNorm && guarantorCnicNorm && borrowerCnicNorm === guarantorCnicNorm) {
+    throw new Error('قرض دار اور ضامن کا شناختی کارڈ نمبر ایک جیسا نہیں ہو سکتا۔');
+  }
+
+  const paid = Number(data.paidReturnAmount ?? existing.paidReturnAmount) || 0;
+  const remaining = Math.max(0, loanAmt - paid);
+  const nextStatus: QarzaHasanaAgreement['status'] =
+    existing.status === 'Defaulted' ? 'Defaulted' : remaining <= 0 ? 'Repaid' : 'Active';
+
+  const updatedRecord = removeUndefined<QarzaHasanaAgreement>({
+    ...existing,
+    ...data,
+    id,
+    loanAmount: loanAmt,
+    paidReturnAmount: paid,
+    remainingReturnAmount: remaining,
+    status: nextStatus,
+    updatedAt: new Date().toISOString(),
+  });
+
+  try {
+    await setDoc(docRef, updatedRecord, { merge: true });
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'UPDATE_QARZA_HASANA',
+      'QarzaHasana',
+      id,
+      `Updated Qarza-e-Hasana agreement #${updatedRecord.agreementNumber} for ${updatedRecord.fullName}.`
+    );
+    return updatedRecord;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 

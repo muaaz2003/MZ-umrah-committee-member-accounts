@@ -68,8 +68,8 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
 
     // STRICT MATCHING: Both Name and CNIC must match a registered member
     const found = members.find((m) => {
-      const memberCnic = cleanCnic(m.cnic);
-      const memberName = cleanName(m.fullName);
+      const memberCnic = cleanCnic(m.cnic || '');
+      const memberName = cleanName(m.fullName || '');
 
       // CNIC exact match on digits
       const cnicMatches = memberCnic === trimmedCnic;
@@ -108,7 +108,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
     if (!matchedMember) return [];
     return receipts
       .filter((r) => r.memberId === matchedMember.id)
-      .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+      .sort((a, b) => (b.paymentDate || '').localeCompare(a.paymentDate || ''));
   }, [matchedMember, receipts]);
 
   // Completion calculation
@@ -356,7 +356,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                       {matchedMember.memberNumber}
                     </span>
                     <span className="text-xs px-2.5 py-0.5 bg-white/10 text-emerald-100 rounded-md border border-white/20">
-                      {matchedMember.planMonths} ماہ کا عمرہ پلان ({matchedMember.planMonths === 24 ? '120,000 روپے' : '180,000 روپے'})
+                      {matchedMember.planMonths} ماہ کا عمرہ پلان ({formatPKR(matchedMember.totalCommitteeAmount)})
                     </span>
                     <span className="text-xs px-2 py-0.5 bg-emerald-600 text-white rounded-md font-bold">
                       {matchedMember.status} Member
@@ -395,7 +395,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                     {formatPKR(matchedMember.totalCommitteeAmount)}
                   </div>
                   <span className="text-[10px] text-gray-400 mt-0.5 block">
-                    {matchedMember.planMonths} اقساط @ Rs. 5,000
+                    {matchedMember.planMonths} اقساط @ {formatPKR(matchedMember.monthlyInstallment || 5000)}
                   </span>
                 </div>
 
@@ -590,12 +590,16 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                           </td>
                           <td className="py-3.5 px-4 text-left">
                             {(isPaid || inst.paidAmount > 0) && (() => {
+                              const instReceiptTokens = (inst.receiptNumber || '')
+                                .split(',')
+                                .map((s) => s.trim())
+                                .filter(Boolean);
                               const matchingRec = receipts.find(
                                 (r) =>
                                   r.memberId === matchedMember.id &&
-                                  (r.installmentNumber === inst.installmentNumber ||
+                                  (instReceiptTokens.includes(r.receiptNumber) ||
                                     (r.installmentsCovered && r.installmentsCovered.includes(inst.installmentNumber)) ||
-                                    (inst.receiptNumber && inst.receiptNumber.includes(r.receiptNumber)))
+                                    (r.installmentNumber === inst.installmentNumber && (r.installmentsCovered?.length || 0) <= 1))
                               );
                               if (!matchingRec) return null;
                               return (
@@ -648,7 +652,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                         {formatPKR(rec.amount)}
                       </div>
                       <div className="text-xs text-gray-600 mt-1">
-                        قسط #{rec.installmentNumber} • بذریعہ {rec.paymentMethod}
+                        {rec.installmentDescription || `قسط #${rec.installmentNumber}`} • بذریعہ {rec.paymentMethod}
                       </div>
                     </div>
 

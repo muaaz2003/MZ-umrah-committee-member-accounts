@@ -1,23 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
-  User,
-  Shield,
   Bell,
-  CheckCircle2,
-  ChevronDown,
-  Building2,
   Menu,
   Lock,
   LogOut,
-  ExternalLink,
 } from 'lucide-react';
-import { AuthUser, Member, UserRole } from '../types';
+import { Member } from '../types';
 import mzaLogo from '../assets/images/mza-logo.png';
 
 interface HeaderProps {
-  currentUser: AuthUser;
-  onSwitchUserRole: (role: UserRole, memberId?: string) => void;
   members: Member[];
   onSelectMember: (memberId: string) => void;
   overdueCount: number;
@@ -32,8 +24,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentUser,
-  onSwitchUserRole,
   members,
   onSelectMember,
   overdueCount,
@@ -48,16 +38,36 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSearchResults(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowSearchResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Fast search by Name, Membership Number (MZA-#...), CNIC, Mobile, WhatsApp
   const filteredMembers = searchQuery.trim()
     ? members.filter((m) => {
         const q = searchQuery.toLowerCase().trim();
         return (
-          m.fullName.toLowerCase().includes(q) ||
-          m.memberNumber.toLowerCase().includes(q) ||
-          m.cnic.toLowerCase().includes(q) ||
-          m.mobile.toLowerCase().includes(q) ||
+          (m.fullName || '').toLowerCase().includes(q) ||
+          (m.memberNumber || '').toLowerCase().includes(q) ||
+          (m.cnic || '').toLowerCase().includes(q) ||
+          (m.mobile || '').toLowerCase().includes(q) ||
           (m.whatsapp && m.whatsapp.toLowerCase().includes(q))
         );
       })
@@ -130,9 +140,9 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Umrah Logo */}
         <button
           type="button"
-          onClick={() => onNavigate('dashboard')}
+          onClick={() => onNavigate(isAdminLoggedIn ? 'dashboard' : 'zati-record')}
           className="flex items-center gap-2 text-left group cursor-pointer focus:outline-hidden shrink-0"
-          title="MZA Umrah Committee - Go to Dashboard"
+          title={isAdminLoggedIn ? 'MZA Umrah Committee - Go to Dashboard' : 'MZA Umrah Committee - Member Portal'}
         >
           <img
             src={mzaLogo}
@@ -185,7 +195,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* Fast Member Search (Admin only) */}
-            <div className="relative hidden sm:block">
+            <div ref={searchContainerRef} className="relative hidden sm:block">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
               <input
                 type="text"
@@ -228,7 +238,7 @@ export const Header: React.FC<HeaderProps> = ({
                           </div>
                           <div className="text-right text-xs">
                             <span className="font-bold text-emerald-700">
-                              Rs. {m.paidAmount.toLocaleString()}
+                              Rs. {(m.paidAmount || 0).toLocaleString()}
                             </span>
                           </div>
                         </button>

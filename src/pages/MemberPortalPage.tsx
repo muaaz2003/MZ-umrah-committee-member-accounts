@@ -194,11 +194,18 @@ export const MemberPortalPage: React.FC<MemberPortalPageProps> = ({
                     const todayStr = getTodayKarachiDate();
                     return installments.map((inst) => {
                       const liveStatus = computeInstallmentStatus(inst, todayStr);
-                      const receipt = receipts.find(
-                        (r) =>
-                          r.installmentNumber === inst.installmentNumber ||
-                          (r.installmentsCovered && r.installmentsCovered.includes(inst.installmentNumber))
-                      );
+                      const instReceiptTokens = (inst.receiptNumber || '')
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                      const receipt = inst.paidAmount > 0
+                        ? receipts.find(
+                            (r) =>
+                              instReceiptTokens.includes(r.receiptNumber) ||
+                              (r.installmentsCovered && r.installmentsCovered.includes(inst.installmentNumber)) ||
+                              (r.installmentNumber === inst.installmentNumber && (r.installmentsCovered?.length || 0) <= 1)
+                          )
+                        : undefined;
                       return (
                         <tr
                           key={inst.id}

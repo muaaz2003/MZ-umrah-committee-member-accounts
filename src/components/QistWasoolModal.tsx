@@ -22,7 +22,7 @@ import {
   computeInstallmentStatus,
   getTodayKarachiDate,
 } from '../utils/calculations';
-import { recordPayment, recordManualPayment, deleteReceiptAndRevertPayment } from '../services/firebaseService';
+import { recordPayment, recordManualPayment, deleteReceiptAndRevertPayment, updateReceiptDetails } from '../services/firebaseService';
 import mzaLogo from '../assets/images/mza-logo.png';
 
 interface QistWasoolModalProps {
@@ -164,8 +164,8 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
     if (!q) return allMembers;
     return allMembers.filter(
       (m) =>
-        m.fullName.toLowerCase().includes(q) ||
-        m.memberNumber.toLowerCase().includes(q) ||
+        (m.fullName || '').toLowerCase().includes(q) ||
+        (m.memberNumber || '').toLowerCase().includes(q) ||
         (m.fatherName && m.fatherName.toLowerCase().includes(q)) ||
         (m.mobile && m.mobile.includes(q))
     );
@@ -225,8 +225,8 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
     // Check if input exactly matches a registered member name or number
     const exact = allMembers.find(
       (m) =>
-        m.fullName.trim().toLowerCase() === val.trim().toLowerCase() ||
-        m.memberNumber.trim().toLowerCase() === val.trim().toLowerCase()
+        (m.fullName || '').trim().toLowerCase() === val.trim().toLowerCase() ||
+        (m.memberNumber || '').trim().toLowerCase() === val.trim().toLowerCase()
     );
     if (exact) {
       setSelectedMember(exact);
@@ -280,7 +280,52 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
       return;
     }
 
-    // If editing an existing receipt, cleanly delete/revert the previous receipt and payment first so it doesn't double count
+    if (selectedMember && !selectedInstallmentId) {
+      setErrorMessage('برائے مہربانی قسط نمبر منتخب کریں۔ (Please select an installment to collect)');
+      return;
+    }
+
+    // In-place edit for same registered member & same installment preserves original receipt number cleanly
+    if (
+      editingReceipt &&
+      selectedMember &&
+      editingReceipt.memberId === selectedMember.id &&
+      selectedInstallment?.installmentNumber === editingReceipt.installmentNumber
+    ) {
+      try {
+        setIsSubmitting(true);
+        await updateReceiptDetails(
+          editingReceipt.id,
+          {
+            amount: finalAmount,
+            paymentDate,
+            paymentMethod,
+            referenceNumber: referenceNumber.trim(),
+            notes: notes.trim(),
+          },
+          staffName || 'Staff Counter'
+        );
+        const updatedReceipt: Receipt = {
+          ...editingReceipt,
+          amount: finalAmount,
+          currentPayment: finalAmount,
+          paymentDate,
+          paymentMethod,
+          referenceNumber: referenceNumber.trim(),
+          notes: notes.trim(),
+        };
+        setIsSubmitting(false);
+        onClose();
+        onPaymentSuccess(updatedReceipt);
+      } catch (err: any) {
+        console.error('Receipt update error:', err);
+        setIsSubmitting(false);
+        setErrorMessage(err?.message || 'رسید اپ ڈیٹ کرنے کے دوران خرابی پیش آئی۔');
+      }
+      return;
+    }
+
+    // Otherwise (cross-member / manual re-issue), cleanly delete/revert previous receipt after all validations pass
     if (editingReceipt) {
       try {
         setIsSubmitting(true);
@@ -321,12 +366,6 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
         setIsSubmitting(false);
         setErrorMessage(err.message || 'Payment could not be recorded. Please try again.');
       }
-      return;
-    }
-
-    // Registered member submission
-    if (!selectedInstallmentId) {
-      setErrorMessage('برائے مہربانی قسط نمبر منتخب کریں۔ (Please select an installment to collect)');
       return;
     }
 
@@ -602,8 +641,11 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
                       setSelectedInstallmentId(e.target.value);
                       const inst = activeInstallments.find((i) => i.id === e.target.value);
                       if (inst) {
-                        const rem = inst.remainingAmount || inst.amount;
-                        setAmountReceived(rem);
+                        const rem =
+                          inst.remainingAmount !== undefined
+                            ? inst.remainingAmount
+                            : Math.max(0, inst.amount - (inst.paidAmount || 0));
+                        setAmountReceived(rem > 0 ? rem : inst.amount);
                       }
                     }}
                     className="w-full px-3.5 py-2.5 text-sm font-semibold border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-600 bg-white shadow-xs focus:outline-hidden"
@@ -613,10 +655,10 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
                         inst.installmentNumber === editingReceipt.installmentNumber ||
                         (editingReceipt.installmentsCovered && editingReceipt.installmentsCovered.includes(inst.installmentNumber))
                       );
-                      const rem = inst.remainingAmount !== undefined ? inst.remainingAmount : (inst.amount - (inst.paidAmount || 0));
+                      const rem = inst.remainingAmount !== undefined ? inst.remainingAmount : Math.max(0, inst.amount - (inst.paidAmount || 0));
                       const liveStatus = computeInstallmentStatus(inst, getTodayKarachiDate());
                       const statusLabel = isCoveredByEditing ? 'Being Edited' : liveStatus;
-                      const dueLabel = isCoveredByEditing ? formatPKR(editingReceipt.amount || inst.amount) : formatPKR(rem || inst.amount);
+                      const dueLabel = isCoveredByEditing ? formatPKR(editingReceipt.amount || inst.amount) : formatPKR(rem);
                       return (
                         <option key={inst.id} value={inst.id}>
                           Qist #{inst.installmentNumber} ({statusLabel} - Due: {dueLabel})

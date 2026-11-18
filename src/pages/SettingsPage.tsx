@@ -174,21 +174,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       return;
     }
 
+    if (!currentPassTrimmed) {
+      setPasswordError('برائے مہربانی موجودہ پاس ورڈ درج کریں۔ (Current password is required)');
+      return;
+    }
+
     try {
       setIsSavingPass(true);
 
       // Re-authenticate user with current password before updating
-      if (currentPassTrimmed) {
-        try {
-          const credential = EmailAuthProvider.credential(currentUser.email, currentPassTrimmed);
-          await reauthenticateWithCredential(currentUser, credential);
-        } catch (authErr: any) {
-          if (authErr?.code === 'auth/wrong-password' || authErr?.code === 'auth/invalid-credential') {
-            setPasswordError('موجودہ پاس ورڈ غلط ہے! براہ کرم درست موجودہ پاس ورڈ درج کریں۔');
-            setIsSavingPass(false);
-            return;
-          }
+      try {
+        const credential = EmailAuthProvider.credential(currentUser.email, currentPassTrimmed);
+        await reauthenticateWithCredential(currentUser, credential);
+      } catch (authErr: any) {
+        if (authErr?.code === 'auth/wrong-password' || authErr?.code === 'auth/invalid-credential') {
+          setPasswordError('موجودہ پاس ورڈ غلط ہے! براہ کرم درست موجودہ پاس ورڈ درج کریں۔');
+        } else if (authErr?.code === 'auth/too-many-requests') {
+          setPasswordError('بہت زیادہ غلط کوششیں۔ برائے مہربانی کچھ دیر بعد دوبارہ کوشش کریں۔');
+        } else {
+          setPasswordError(authErr?.message || 'موجودہ پاس ورڈ کی تصدیق میں خرابی پیش آئی۔');
         }
+        setIsSavingPass(false);
+        return;
       }
 
       // Update password in Firebase Authentication securely
@@ -350,7 +357,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                         setNewPasswordInput(e.target.value);
                         setPasswordError(null);
                       }}
-                      placeholder="کم از کم 4 ہندسے/حروف"
+                      placeholder="کم از کم 6 ہندسے/حروف"
                       className="w-full pl-3 pr-9 py-2 border border-slate-200 rounded-lg text-xs focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/20 focus:outline-hidden"
                     />
                     <button
@@ -424,7 +431,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     سسٹم ڈیٹا بیک اپ (System Data Backup)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    کلاؤڈ ڈیٹابیس کی تمام 7 کلیکشنز (ممبران، اقساط، ادائیگیاں، رسیدیں، ریفنڈز، لاگز، سیٹنگز) کی مکمل JSON فائل ڈاؤن لوڈ کریں۔
+                    کلاؤڈ ڈیٹابیس کی تمام کلیکشنز (ممبران، اقساط، ادائیگیاں، رسیدیں، ریفنڈز، کینسلیشنز، قرضِ حسنہ، کاؤنٹرز، آڈٹ لاگز، سیٹنگز) کی مکمل JSON فائل ڈاؤن لوڈ کریں۔
                   </p>
                 </div>
               </div>
@@ -966,8 +973,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </label>
                 <input
                   type="number"
-                  value={formData.registrationFee ?? formData.defaultRegistrationFee ?? 1000}
-                  onChange={(e) => setFormData({ ...formData, registrationFee: Number(e.target.value) })}
+                  min={0}
+                  value={formData.registrationFee ?? formData.defaultRegistrationFee ?? 0}
+                  onChange={(e) => setFormData({ ...formData, registrationFee: Math.max(0, Number(e.target.value) || 0) })}
                   className="w-full px-3 py-2 border rounded-lg font-bold"
                 />
               </div>
@@ -1070,7 +1078,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-slate-500 font-sans font-medium">رجسٹریشن فیس:</span>
-                  <span className="font-bold text-slate-900">Rs. {(formData.registrationFee ?? 1000).toLocaleString()}</span>
+                  <span className="font-bold text-slate-900">Rs. {(formData.registrationFee ?? 0).toLocaleString()}</span>
                 </div>
               </div>
 

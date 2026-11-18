@@ -74,6 +74,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const handleNavClick = (pageId: string) => {
+    if (!isAdminLoggedIn && pageId !== 'zati-record') {
+      setIsMobileOpen(false);
+      onOpenAdminLogin();
+      return;
+    }
     onNavigate(pageId);
     setIsMobileOpen(false);
   };
@@ -192,7 +197,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <Icon className={`w-5 h-5 ${isActive ? 'text-amber-300' : 'opacity-60'}`} />
                   <span className="text-xs sm:text-sm font-medium">{item.label}</span>
                 </div>
-                {item.badge && item.badge > 0 ? (
+                {isAdminLoggedIn && item.badge && item.badge > 0 ? (
                   <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-400 text-emerald-950 rounded-full">
                     {item.badge}
                   </span>
@@ -206,31 +211,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </nav>
 
-            {/* Footer Admin Bar with Logout */}
-            <div className="p-4 mt-auto border-t border-emerald-800 bg-[#064E3B]">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5 truncate">
-                  <div className="w-8 h-8 rounded-full bg-amber-400 text-emerald-950 flex items-center justify-center font-bold text-xs shrink-0">
-                    ASM
-                  </div>
-                  <div className="truncate">
-                    <div className="text-xs font-bold text-white truncate">عبد الشکور مدنی</div>
-                    <div className="text-[10px] text-amber-300">سپر ایڈمن (Active)</div>
-                  </div>
+        {/* Footer Admin Bar with Logout (only when authenticated) */}
+        {isAdminLoggedIn && (
+          <div className="p-4 mt-auto border-t border-emerald-800 bg-[#064E3B]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 truncate">
+                <div className="w-8 h-8 rounded-full bg-amber-400 text-emerald-950 flex items-center justify-center font-bold text-xs shrink-0">
+                  ASM
                 </div>
-
-                <button
-                  onClick={() => {
-                    setIsMobileOpen(false);
-                    onAdminLogout();
-                  }}
-                  className="p-2 text-rose-300 hover:text-rose-100 hover:bg-rose-900/40 rounded-lg transition-colors cursor-pointer"
-                  title="لاگ آؤٹ برائے ایڈمن"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
+                <div className="truncate">
+                  <div className="text-xs font-bold text-white truncate">عبد الشکور مدنی</div>
+                  <div className="text-[10px] text-amber-300">سپر ایڈمن (Active)</div>
+                </div>
               </div>
+
+              <button
+                onClick={() => {
+                  setIsMobileOpen(false);
+                  onAdminLogout();
+                }}
+                className="p-2 text-rose-300 hover:text-rose-100 hover:bg-rose-900/40 rounded-lg transition-colors cursor-pointer"
+                title="لاگ آؤٹ برائے ایڈمن"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
+          </div>
+        )}
       </aside>
     </>
   );

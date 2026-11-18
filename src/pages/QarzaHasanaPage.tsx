@@ -63,9 +63,12 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
 
   // Computed Financial Aggregates
   const totalAgreementsCount = agreements.length;
-  const totalDisbursedAmount = agreements.reduce((sum, a) => sum + (a.loanAmount || 20000), 0);
-  const totalRepaidAmount = agreements.reduce((sum, a) => sum + (a.paidReturnAmount || 0), 0);
-  const totalOutstandingBalance = Math.max(0, totalDisbursedAmount - totalRepaidAmount);
+  const totalDisbursedAmount = agreements.reduce((sum, a) => sum + (Number(a.loanAmount) || 0), 0);
+  const totalRepaidAmount = agreements.reduce((sum, a) => sum + (Number(a.paidReturnAmount) || 0), 0);
+  const totalOutstandingBalance = agreements.reduce(
+    (sum, a) => sum + (a.status === 'Repaid' ? 0 : getRemainingAmount(a)),
+    0
+  );
   const activeCount = agreements.filter((a) => a.status === 'Active').length;
   const repaidCount = agreements.filter((a) => a.status === 'Repaid').length;
   const defaultedCount = agreements.filter((a) => a.status === 'Defaulted').length;
@@ -211,7 +214,7 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={() => handleOpenNewAgreement()}
-            className="px-4 py-2.5 bg-[#064E3B] hover:bg-emerald-850 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+            className="px-4 py-2.5 bg-[#064E3B] hover:bg-emerald-900 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>+ نیا عہد نامہ قرضِ حسنہ (Issue Loan)</span>
@@ -368,7 +371,7 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
           </p>
           <button
             onClick={() => handleOpenNewAgreement()}
-            className="px-4 py-2 bg-[#064E3B] hover:bg-emerald-850 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+            className="px-4 py-2 bg-[#064E3B] hover:bg-emerald-900 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
           >
             <Plus className="w-4 h-4" />
             <span>پہلا عہد نامہ قرضِ حسنہ جاری کریں</span>
@@ -415,11 +418,11 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
                         </div>
                       </td>
                       <td className="py-3.5 px-5 text-right font-black text-emerald-950 text-sm">
-                        {formatPKR(item.loanAmount || 20000)}
+                        {formatPKR(Number(item.loanAmount) || 0)}
                       </td>
                       <td className="py-3.5 px-5 text-right">
                         <span className="font-bold text-slate-800">
-                          {formatPKR(item.monthlyReturnAmount || 10000)}/ماہ
+                          {formatPKR(Number(item.monthlyReturnAmount) || 0)}/ماہ
                         </span>
                         <div className="text-[10px] text-slate-400 mt-0.5">
                           مدت: {item.repaymentDurationMonths || 2} ماہ
@@ -430,9 +433,9 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
                           واپس: {formatPKR(item.paidReturnAmount || 0)}
                         </div>
                         <div className={`text-[11px] font-bold mt-0.5 ${
-                          (item.remainingReturnAmount || 0) > 0 ? 'text-amber-800' : 'text-slate-400'
+                          getRemainingAmount(item) > 0 ? 'text-amber-800' : 'text-slate-400'
                         }`}>
-                          باقی: {formatPKR(item.remainingReturnAmount !== undefined ? item.remainingReturnAmount : Math.max(0, (item.loanAmount || 20000) - (item.paidReturnAmount || 0)))}
+                          باقی: {formatPKR(getRemainingAmount(item))}
                         </div>
                       </td>
                       <td className="py-3.5 px-5 text-right">
@@ -468,7 +471,7 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
                             <button
                               onClick={() => {
                                 const rem = getRemainingAmount(item);
-                                const monthly = Number(item.monthlyReturnAmount) || 10000;
+                                const monthly = Number(item.monthlyReturnAmount) || rem;
                                 setAgreementForRepayment(item);
                                 setRepaymentAmountInput(Math.min(monthly, rem));
                                 setRepaymentNotes('');
@@ -573,7 +576,7 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-urdu">کل قرض رقم:</span>
-                  <span className="font-bold text-slate-900">{formatPKR(agreementForRepayment.loanAmount || 20000)}</span>
+                  <span className="font-bold text-slate-900">{formatPKR(Number(agreementForRepayment.loanAmount) || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-urdu">سابقہ ادا شدہ واپسی:</span>
@@ -658,7 +661,7 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
                   type="button"
                   onClick={handleExecuteRepayment}
                   disabled={isProcessing}
-                  className="flex-1 py-2.5 bg-[#064E3B] hover:bg-emerald-850 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-[#064E3B] hover:bg-emerald-900 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {isProcessing ? 'ریکارڈ ہو رہا ہے...' : 'واپسی رقم محفوظ کریں'}
                 </button>

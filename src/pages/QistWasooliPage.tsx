@@ -26,7 +26,7 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
   onOpenQistWasool,
   onOpenReceipt,
 }) => {
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month'>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'yesterday' | 'month'>('all');
   const [methodFilter, setMethodFilter] = useState<'all' | PaymentMethod>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -44,16 +44,16 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
       if (p.paymentDate !== yesterday) return false;
     } else if (dateFilter === 'month') {
       const currentMonth = todayStr.substring(0, 7);
-      if (!p.paymentDate.startsWith(currentMonth)) return false;
+      if (!(p.paymentDate || '').startsWith(currentMonth)) return false;
     }
 
     // Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const match =
-        p.memberName.toLowerCase().includes(q) ||
-        p.memberNumber.toLowerCase().includes(q) ||
-        (p.referenceNumber && p.referenceNumber.toLowerCase().includes(q));
+        (p.memberName || '').toLowerCase().includes(q) ||
+        (p.memberNumber || '').toLowerCase().includes(q) ||
+        (p.referenceNumber || '').toLowerCase().includes(q);
       if (!match) return false;
     }
 
@@ -61,7 +61,7 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
   });
 
   // Aggregated Stats
-  const getPaymentAmt = (p: Payment) => p.amountReceived || p.amount || 0;
+  const getPaymentAmt = (p: Payment) => Number(p.amountReceived ?? p.amount ?? 0) || 0;
   const totalAmount = filtered.reduce((sum, p) => sum + getPaymentAmt(p), 0);
   const cashAmount = filtered.filter((p) => p.paymentMethod === 'Cash').reduce((sum, p) => sum + getPaymentAmt(p), 0);
   const easyPaisaAmount = filtered.filter((p) => p.paymentMethod === 'EasyPaisa').reduce((sum, p) => sum + getPaymentAmt(p), 0);
@@ -262,7 +262,7 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
                       <span className="text-[10px] font-mono text-emerald-800 font-semibold">{p.memberNumber}</span>
                     </td>
                     <td className="py-3.5 px-5 font-bold text-slate-800">
-                      Qist #{p.installmentNumber}
+                      {p.installmentDescription || `Qist #${p.installmentNumber}`}
                     </td>
                     <td className="py-3.5 px-5">
                       <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold inline-block ${
@@ -281,7 +281,7 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
                       {p.referenceNumber || '—'}
                     </td>
                     <td className="py-3.5 px-5 text-right font-black text-emerald-900 text-sm">
-                      {formatPKR(p.amountReceived || p.amount || 0)}
+                      {formatPKR(getPaymentAmt(p))}
                     </td>
                     <td className="py-3.5 px-5 text-slate-600 text-[11px]">
                       {p.collectedBy || 'Staff'}

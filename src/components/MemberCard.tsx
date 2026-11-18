@@ -175,7 +175,7 @@ export const MemberCard: React.FC<MemberCardProps> = ({
         {member.registrationFeeStatus === 'Unpaid' && (
           <div className="flex items-center gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 font-medium">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Registration Fee (Rs. {member.registrationFee || 1000}) Unpaid</span>
+            <span>Registration Fee (Rs. {(member.registrationFee ?? 0).toLocaleString()}) Unpaid</span>
           </div>
         )}
       </div>

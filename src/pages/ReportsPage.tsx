@@ -62,46 +62,88 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
     }
   };
 
-  // Plan A vs Plan B
-  const plan24Members = members.filter((m) => m.planMonths === 24);
-  const plan36Members = members.filter((m) => m.planMonths === 36);
+  // Plan A vs Plan B (exclude Cancelled, Refunded, Archived to match Dashboard summary)
+  const portfolioMembers = members.filter(
+    (m) => m.status !== 'Cancelled' && m.status !== 'Refunded' && m.status !== 'Archived'
+  );
+  const plan24Members = portfolioMembers.filter((m) => m.planMonths === 24);
+  const plan36Members = portfolioMembers.filter((m) => m.planMonths === 36);
 
-  const plan24Total = plan24Members.reduce((sum, m) => sum + m.totalCommitteeAmount, 0);
-  const plan24Paid = plan24Members.reduce((sum, m) => sum + m.paidAmount, 0);
-  const plan24Due = plan24Members.reduce((sum, m) => sum + m.dueAmount, 0);
+  const plan24Total = plan24Members.reduce((sum, m) => sum + (m.totalCommitteeAmount || 0), 0);
+  const plan24Paid = plan24Members.reduce((sum, m) => sum + (m.paidAmount || 0), 0);
+  const plan24Due = plan24Members.reduce((sum, m) => sum + (m.dueAmount || 0), 0);
 
-  const plan36Total = plan36Members.reduce((sum, m) => sum + m.totalCommitteeAmount, 0);
-  const plan36Paid = plan36Members.reduce((sum, m) => sum + m.paidAmount, 0);
-  const plan36Due = plan36Members.reduce((sum, m) => sum + m.dueAmount, 0);
+  const plan36Total = plan36Members.reduce((sum, m) => sum + (m.totalCommitteeAmount || 0), 0);
+  const plan36Paid = plan36Members.reduce((sum, m) => sum + (m.paidAmount || 0), 0);
+  const plan36Due = plan36Members.reduce((sum, m) => sum + (m.dueAmount || 0), 0);
 
   // Methods
-  const getAmt = (p: Payment) => p.amountReceived || p.amount || 0;
+  const getAmt = (p: Payment) => Number(p.amountReceived ?? p.amount ?? 0) || 0;
   const cashTotal = payments.filter((p) => p.paymentMethod === 'Cash').reduce((s, p) => s + getAmt(p), 0);
   const epTotal = payments.filter((p) => p.paymentMethod === 'EasyPaisa').reduce((s, p) => s + getAmt(p), 0);
   const jcTotal = payments.filter((p) => p.paymentMethod === 'JazzCash').reduce((s, p) => s + getAmt(p), 0);
 
+  const escapeCsvCell = (val: unknown): string => {
+    let s = val === null || val === undefined ? '' : String(val);
+    // Neutralize formula injection prefixes in Excel/Sheets
+    if (/^[=+\-@\t\r]/.test(s)) {
+      s = `'${s}`;
+    }
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+
   const handleExportCSV = () => {
-    let csvContent = 'data:text/csv;charset=utf-8,';
+    const rows: string[] = [];
 
     if (selectedReport === 'collection') {
-      csvContent += 'Receipt/Payment Date,Member Name,Membership No,Installment No,Amount Received,Payment Method,Reference TID,Collected By\n';
+      rows.push('Receipt/Payment Date,Member Name,Membership No,Installment No,Amount Received,Payment Method,Reference TID,Collected By');
       payments.forEach((p) => {
-        csvContent += `"${p.paymentDate}","${p.memberName}","${p.memberNumber}","${p.installmentNumber}","${getAmt(p)}","${p.paymentMethod}","${p.referenceNumber || ''}","${p.collectedBy || ''}"\n`;
+        rows.push(
+          [
+            p.paymentDate || '',
+            p.memberName || '',
+            p.memberNumber || '',
+            p.installmentDescription || `Qist #${p.installmentNumber}`,
+            getAmt(p),
+            p.paymentMethod || '',
+            p.referenceNumber || '',
+            p.collectedBy || '',
+          ]
+            .map(escapeCsvCell)
+            .join(',')
+        );
       });
     } else {
-      csvContent += 'Membership No,Full Name,Father Name,Mobile,Plan Months,Total Amount,Paid Amount,Due Amount,Advance Amount,Status\n';
+      rows.push('Membership No,Full Name,Father Name,Mobile,Plan Months,Total Amount,Paid Amount,Due Amount,Advance Amount,Status');
       members.forEach((m) => {
-        csvContent += `"${m.memberNumber}","${m.fullName}","${m.fatherName}","${m.mobile}","${m.planMonths}","${m.totalCommitteeAmount}","${m.paidAmount}","${m.dueAmount}","${m.advanceAmount}","${m.status}"\n`;
+        rows.push(
+          [
+            m.memberNumber || '',
+            m.fullName || '',
+            m.fatherName || '',
+            m.mobile || '',
+            m.planMonths,
+            m.totalCommitteeAmount || 0,
+            m.paidAmount || 0,
+            m.dueAmount || 0,
+            m.advanceAmount || 0,
+            m.status || '',
+          ]
+            .map(escapeCsvCell)
+            .join(',')
+        );
       });
     }
 
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob(['\uFEFF' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute('download', `MZA_Umrah_${selectedReport}_report_${getTodayKarachiDate()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
@@ -139,7 +181,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
             onClick={handleDownloadFullBackup}
             disabled={isDownloadingBackup}
             className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-emerald-950 font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-98"
-            title="پورے کلاؤڈ ڈیٹابیس کی تمام 7 کلیکشنز کا محفوظ بیک اپ JSON فارمیٹ میں ڈاؤن لوڈ کریں"
+            title="پورے کلاؤڈ ڈیٹابیس کی تمام کلیکشنز کا محفوظ بیک اپ JSON فارمیٹ میں ڈاؤن لوڈ کریں"
           >
             {isDownloadingBackup ? (
               <>
@@ -249,7 +291,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
                   <tr key={p.id}>
                     <td className="py-2.5 px-3 font-mono text-slate-600">{formatDateDisplay(p.paymentDate)}</td>
                     <td className="py-2.5 px-3 font-bold text-slate-900">{p.memberName} ({p.memberNumber})</td>
-                    <td className="py-2.5 px-3">Qist #{p.installmentNumber}</td>
+                    <td className="py-2.5 px-3">{p.installmentDescription || `Qist #${p.installmentNumber}`}</td>
                     <td className="py-2.5 px-3">{p.paymentMethod}</td>
                     <td className="py-2.5 px-3 font-mono text-slate-500">{p.referenceNumber || '—'}</td>
                     <td className="py-2.5 px-3 text-right font-black text-emerald-800">{formatPKR(getAmt(p))}</td>

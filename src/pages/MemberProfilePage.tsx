@@ -472,7 +472,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
             )}
 
             {userRole !== 'MEMBER' &&
-              installments.some((i) => i.installmentNumber === 1 && i.dueDate.startsWith('2027')) && (
+              installments.some((i) => i.installmentNumber === 1 && (i.dueDate || '').startsWith('2027')) && (
                 <div className="mx-4 mt-3 p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -510,11 +510,15 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                     {installments.map((inst) => {
                       const todayStr = getTodayKarachiDate();
                       const liveStatus = computeInstallmentStatus(inst, todayStr);
+                      const instReceiptTokens = (inst.receiptNumber || '')
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean);
                       // Match receipt ONLY if installment has actual payment received
                       const receipt = inst.paidAmount > 0
                         ? receipts.find(
                             (r) =>
-                              (inst.receiptNumber && inst.receiptNumber.includes(r.receiptNumber)) ||
+                              instReceiptTokens.includes(r.receiptNumber) ||
                               (r.installmentsCovered && r.installmentsCovered.includes(inst.installmentNumber)) ||
                               (r.installmentNumber === inst.installmentNumber && (r.installmentsCovered?.length || 0) <= 1)
                           )
@@ -522,7 +526,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                       const isToday =
                         liveStatus === 'Partial' ||
                         liveStatus === 'Partial - Overdue' ||
-                        (liveStatus !== 'Paid' && inst.dueDate.startsWith(todayStr.slice(0, 7)));
+                        (liveStatus !== 'Paid' && (inst.dueDate || '').startsWith(todayStr.slice(0, 7)));
                       return (
                         <tr
                           key={inst.id}
@@ -615,7 +619,7 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                             </span>
                           </div>
                           <div className="text-sm font-bold text-gray-900 mb-1">
-                            Umrah Qist #{rec.installmentNumber}
+                            {rec.installmentDescription || `Umrah Qist #${rec.installmentNumber}`}
                           </div>
                           <div className="text-xs text-gray-600 flex items-center justify-between">
                             <span>Amount Paid:</span>
@@ -698,20 +702,22 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
 
         {/* Right Sidebar Quick Panel - Exact Professional Polish Component */}
         <div className="w-full xl:w-72 space-y-6 shrink-0">
-          {/* Collection Quick Panel */}
-          <div className="bg-amber-600 text-white rounded-2xl p-6 shadow-lg shadow-amber-600/20">
-            <div className="text-sm opacity-80 mb-2">Ready to record?</div>
-            <h3 className="text-xl font-bold mb-4">Collection Quick Panel</h3>
-            <button
-              onClick={() => onOpenQistWasool(member)}
-              className="w-full bg-white text-amber-700 hover:bg-amber-50 py-3 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 mb-4 transition-all cursor-pointer active:scale-98"
-            >
-              <span>💵</span> QIST WASOOL KAREIN
-            </button>
-            <div className="text-[10px] opacity-70 leading-relaxed italic">
-              Manual collection only. No online transaction supported. System generates receipt automatically.
+          {/* Collection Quick Panel - Only for staff/admin when member is Active */}
+          {userRole !== 'MEMBER' && member.status === 'Active' && (
+            <div className="bg-amber-600 text-white rounded-2xl p-6 shadow-lg shadow-amber-600/20">
+              <div className="text-sm opacity-80 mb-2">Ready to record?</div>
+              <h3 className="text-xl font-bold mb-4">Collection Quick Panel</h3>
+              <button
+                onClick={() => onOpenQistWasool(member)}
+                className="w-full bg-white text-amber-700 hover:bg-amber-50 py-3 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 mb-4 transition-all cursor-pointer active:scale-98"
+              >
+                <span>💵</span> QIST WASOOL KAREIN
+              </button>
+              <div className="text-[10px] opacity-70 leading-relaxed italic">
+                Manual collection only. No online transaction supported. System generates receipt automatically.
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Member's Today Summary Card */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4 shadow-sm">
@@ -738,15 +744,15 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
             <div className="pt-4 border-t border-gray-100 flex gap-2">
               <button
                 onClick={() => window.print()}
-                className="flex-1 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-[10px] font-bold text-gray-600 uppercase border border-gray-200 transition-colors"
+                className="flex-1 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-[10px] font-bold text-gray-600 uppercase border border-gray-200 transition-colors cursor-pointer"
               >
-                View Reports
+                Print Statement
               </button>
               <button
                 onClick={() => setActiveTab('installments')}
-                className="flex-1 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-[10px] font-bold text-gray-600 uppercase border border-gray-200 transition-colors"
+                className="flex-1 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-[10px] font-bold text-gray-600 uppercase border border-gray-200 transition-colors cursor-pointer"
               >
-                All Due
+                Installments
               </button>
             </div>
           </div>

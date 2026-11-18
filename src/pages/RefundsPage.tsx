@@ -27,27 +27,31 @@ export const RefundsPage: React.FC<RefundsPageProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [selectedMemberForRefund, setSelectedMemberForRefund] = useState<Member | null>(null);
+  const [selectedRefundToView, setSelectedRefundToView] = useState<Refund | null>(null);
 
-  const totalRefunded = refunds.reduce((sum, r) => sum + r.refundAmount, 0);
+  const totalRefunded = refunds.reduce((sum, r) => sum + (Number(r.refundAmount) || 0), 0);
 
   const filtered = refunds.filter((r) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     const m = members.find((mem) => mem.id === r.memberId);
     return (
-      (r.refundVoucherNumber && r.refundVoucherNumber.toLowerCase().includes(q)) ||
-      r.reason.toLowerCase().includes(q) ||
-      (m && (m.fullName.toLowerCase().includes(q) || m.memberNumber.toLowerCase().includes(q)))
+      (r.refundVoucherNumber || '').toLowerCase().includes(q) ||
+      (r.reason || '').toLowerCase().includes(q) ||
+      (r.memberName || '').toLowerCase().includes(q) ||
+      (m && ((m.fullName || '').toLowerCase().includes(q) || (m.memberNumber || '').toLowerCase().includes(q)))
     );
   });
 
   const handleOpenNewRefund = () => {
     setSelectedMemberForRefund(null);
+    setSelectedRefundToView(null);
     setIsRefundModalOpen(true);
   };
 
-  const handleOpenMemberRefund = (member: Member) => {
-    setSelectedMemberForRefund(member);
+  const handleOpenRefundRow = (refund: Refund, member?: Member) => {
+    setSelectedMemberForRefund(member || null);
+    setSelectedRefundToView(refund);
     setIsRefundModalOpen(true);
   };
 
@@ -149,13 +153,7 @@ export const RefundsPage: React.FC<RefundsPageProps> = ({
                     </td>
                     <td className="py-3 px-4 text-center">
                       <button
-                        onClick={() => {
-                          if (member) {
-                            handleOpenMemberRefund(member);
-                          } else {
-                            setIsRefundModalOpen(true);
-                          }
-                        }}
+                        onClick={() => handleOpenRefundRow(r, member)}
                         className="px-2.5 py-1 text-[11px] font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-lg inline-flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <FileText className="w-3 h-3" />
@@ -173,11 +171,19 @@ export const RefundsPage: React.FC<RefundsPageProps> = ({
       {/* Official Refund Form Modal */}
       <RefundFormModal
         isOpen={isRefundModalOpen}
-        onClose={() => setIsRefundModalOpen(false)}
+        onClose={() => {
+          setIsRefundModalOpen(false);
+          setSelectedMemberForRefund(null);
+          setSelectedRefundToView(null);
+        }}
         member={selectedMemberForRefund}
+        members={members}
+        existingRefund={selectedRefundToView}
         currentUserEmail={currentUserEmail}
         onRefundSuccess={() => {
           setIsRefundModalOpen(false);
+          setSelectedMemberForRefund(null);
+          setSelectedRefundToView(null);
           if (onRefresh) onRefresh();
         }}
       />

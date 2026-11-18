@@ -36,11 +36,11 @@ export const ReceiptsListPage: React.FC<ReceiptsListPageProps> = ({
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
-      r.receiptNumber.toLowerCase().includes(q) ||
-      r.memberName.toLowerCase().includes(q) ||
-      r.memberNumber.toLowerCase().includes(q) ||
-      r.mobile.toLowerCase().includes(q) ||
-      r.paymentMethod.toLowerCase().includes(q)
+      (r.receiptNumber || '').toLowerCase().includes(q) ||
+      (r.memberName || '').toLowerCase().includes(q) ||
+      (r.memberNumber || '').toLowerCase().includes(q) ||
+      (r.mobile || '').toLowerCase().includes(q) ||
+      (r.paymentMethod || '').toLowerCase().includes(q)
     );
   });
 
@@ -118,6 +118,7 @@ export const ReceiptsListPage: React.FC<ReceiptsListPageProps> = ({
                   (r.installmentsCovered && r.installmentsCovered.length > 1
                     ? `Qist #${r.installmentsCovered.join(', #')}`
                     : `Qist #${r.installmentNumber}`);
+                const isManual = r.memberId?.startsWith('manual_') || r.planMonths === 1;
 
                 return (
                   <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
@@ -134,7 +135,7 @@ export const ReceiptsListPage: React.FC<ReceiptsListPageProps> = ({
                       {r.memberNumber}
                     </td>
                     <td className="py-3 px-4 font-semibold text-slate-800">
-                      {instLabel} ({r.planMonths}M Plan)
+                      {instLabel} {isManual ? '(Manual)' : `(${r.planMonths}M Plan)`}
                     </td>
                     <td className="py-3 px-4 text-right font-black text-emerald-800 text-sm">
                       {formatPKR(r.amount)}
