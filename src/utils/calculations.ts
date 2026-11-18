@@ -4,6 +4,8 @@ import {
   Member,
   Payment,
   Refund,
+  CancellationNotice,
+  QarzaHasanaAgreement,
   FinancialSummary,
 } from '../types';
 
@@ -30,10 +32,17 @@ export function formatPKR(amount: number | undefined | null): string {
 export function formatDateDisplay(dateStr: string | undefined | null): string {
   if (!dateStr) return '—';
   try {
-    const d = new Date(dateStr);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const trimmed = dateStr.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      const { year, month, day } = parseDateParts(trimmed);
+      if (month >= 1 && month <= 12) {
+        return `${String(day).padStart(2, '0')}-${months[month - 1]}-${year}`;
+      }
+    }
+    const d = new Date(trimmed);
     if (isNaN(d.getTime())) return dateStr;
     const day = String(d.getDate()).padStart(2, '0');
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const month = months[d.getMonth()];
     const year = d.getFullYear();
     return `${day}-${month}-${year}`;
@@ -67,29 +76,91 @@ export function calculateMemberFinancials(
 }
 
 export function calculateFinancialSummary(
+  members: Member[],
+  payments?: Payment[],
+  refunds?: Refund[],
+  cancellations?: CancellationNotice[],
+  qarza?: QarzaHasanaAgreement[]
+): FinancialSummary;
+export function calculateFinancialSummary(
+  totalCommitteeAmount: number,
+  paidAmount: number,
+  advanceAmount?: number,
+  singleRefund?: number
+): {
+  totalCommitteeAmount: number;
+  paidAmount: number;
+  dueAmount: number;
+  advanceAmount: number;
+  refundAmount: number;
+  progressPercent: number;
+};
+export function calculateFinancialSummary(
   membersOrTotal: Member[] | number,
   paymentsOrPaid?: Payment[] | number,
   refundsOrAdvance: Refund[] | number = 0,
-  singleRefund: number = 0
+  singleRefundOrCancellations: number | CancellationNotice[] = 0,
+  qarza: QarzaHasanaAgreement[] = []
 ): any {
-  // If called with arrays: members, payments, refunds
+  // If called with arrays: members, payments, refunds, [cancellations], [qarza]
   if (Array.isArray(membersOrTotal)) {
     const members: Member[] = membersOrTotal;
     const payments: Payment[] = Array.isArray(paymentsOrPaid) ? paymentsOrPaid : [];
     const refunds: Refund[] = Array.isArray(refundsOrAdvance) ? refundsOrAdvance : [];
+    const cancellations: CancellationNotice[] = Array.isArray(singleRefundOrCancellations)
+      ? singleRefundOrCancellations
+      : [];
+    const qarzaList: QarzaHasanaAgreement[] = Array.isArray(qarza) ? qarza : [];
 
-    const totalCommitteeAmount = members.reduce((sum, m) => sum + (m.totalCommitteeAmount || 0), 0);
+    const EXCLUDED_PORTFOLIO_STATUSES = new Set(['Cancelled', 'Refunded', 'Archived']);
+    const portfolioMembers = members.filter((m) => !EXCLUDED_PORTFOLIO_STATUSES.has(m.status));
+
+    const totalCommitteeAmount = portfolioMembers.reduce((sum, m) => sum + (m.totalCommitteeAmount || 0), 0);
     const totalPaidAmount = members.reduce((sum, m) => sum + (m.paidAmount || 0), 0);
-    const totalDueAmount = members.reduce((sum, m) => sum + (m.dueAmount || 0), 0);
+    const portfolioPaidAmount = portfolioMembers.reduce((sum, m) => sum + (m.paidAmount || 0), 0);
+    const totalDueAmount = portfolioMembers.reduce((sum, m) => sum + (m.dueAmount || 0), 0);
     const totalAdvanceAmount = members.reduce((sum, m) => sum + (m.advanceAmount || 0), 0);
-    const totalRefundsAmount = refunds.reduce((sum, r) => sum + (r.refundAmount || 0), 0);
+
+    // Combine refund vouchers + cancellation-notice refunds without double-counting the same memberId
+    let totalRefundsAmount = 0;
+    const refundedMemberIds = new Set<string>();
+    for (const r of refunds) {
+      const amt = Number(r.refundAmount) || 0;
+      if (amt > 0) {
+        totalRefundsAmount += amt;
+        if (r.memberId) {
+          refundedMemberIds.add(r.memberId);
+        }
+      }
+    }
+    for (const c of cancellations) {
+      const amt = Number(c.refundAmount) || 0;
+      if (amt <= 0) continue;
+      if (c.memberId) {
+        if (refundedMemberIds.has(c.memberId)) continue;
+        refundedMemberIds.add(c.memberId);
+      }
+      totalRefundsAmount += amt;
+    }
+
     const netFundBalance = Math.max(0, totalPaidAmount - totalRefundsAmount);
 
-    const registrationFeesCollected = members
-      .filter((m) => m.registrationFeeStatus === 'Paid')
-      .reduce((sum, m) => sum + (m.registrationFee || 1000), 0);
+    const qarzaOutstanding = qarzaList.reduce((sum, q) => {
+      if (q.status === 'Repaid') return sum;
+      const rem =
+        q.remainingReturnAmount !== undefined
+          ? Number(q.remainingReturnAmount)
+          : (Number(q.loanAmount) || 0) - (Number(q.paidReturnAmount) || 0);
+      return sum + Math.max(0, Number.isFinite(rem) ? rem : 0);
+    }, 0);
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const cashInHand = totalPaidAmount - totalRefundsAmount - qarzaOutstanding;
+
+    const registrationFeesCollected = members
+      .filter((m) => m.status !== 'Cancelled' && m.registrationFeeStatus === 'Paid')
+      .reduce((sum, m) => sum + (Number(m.registrationFee) || 0), 0);
+
+    const todayStr = getTodayKarachiDate();
     const currentMonthPrefix = todayStr.substring(0, 7); // YYYY-MM
 
     let todayCollection = 0;
@@ -122,8 +193,8 @@ export function calculateFinancialSummary(
     const activeMembers = members.filter((m) => m.status === 'Active').length;
     const completedMembers = members.filter((m) => m.status === 'Completed').length;
 
-    const plan24List = members.filter((m) => m.planMonths === 24);
-    const plan36List = members.filter((m) => m.planMonths === 36);
+    const plan24List = portfolioMembers.filter((m) => m.planMonths === 24);
+    const plan36List = portfolioMembers.filter((m) => m.planMonths === 36);
 
     const plan24Count = plan24List.length;
     const plan36Count = plan36List.length;
@@ -138,7 +209,7 @@ export function calculateFinancialSummary(
 
     const collectionRate =
       totalCommitteeAmount > 0
-        ? Math.round((totalPaidAmount / totalCommitteeAmount) * 1000) / 10
+        ? Math.round((portfolioPaidAmount / totalCommitteeAmount) * 1000) / 10
         : 0;
 
     const summary: FinancialSummary = {
@@ -170,6 +241,8 @@ export function calculateFinancialSummary(
       bankCollected,
       advanceCollected: totalAdvanceAmount,
       refundsPaid: totalRefundsAmount,
+      qarzaOutstanding,
+      cashInHand,
     };
     return summary;
   }
@@ -178,7 +251,7 @@ export function calculateFinancialSummary(
   const safeTotal = Math.max(0, typeof membersOrTotal === 'number' ? membersOrTotal : 0);
   const safePaid = Math.max(0, typeof paymentsOrPaid === 'number' ? paymentsOrPaid : 0);
   const safeAdvance = Math.max(0, typeof refundsOrAdvance === 'number' ? refundsOrAdvance : 0);
-  const safeRefund = Math.max(0, singleRefund);
+  const safeRefund = Math.max(0, typeof singleRefundOrCancellations === 'number' ? singleRefundOrCancellations : 0);
 
   const dueAmount = Math.max(0, safeTotal - safePaid - safeAdvance + safeRefund);
   const progressPercent = safeTotal > 0 ? Math.min(100, Math.max(0, Math.round((safePaid / safeTotal) * 1000) / 10)) : 0;
@@ -214,6 +287,30 @@ export function getTodayKarachiDate(): string {
     const day = String(karachiTime.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
   }
+}
+
+/**
+ * Returns formatted time string strictly in Asia/Karachi timezone.
+ */
+export function getKarachiTimeString(date: Date = new Date()): string {
+  try {
+    return date.toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi' });
+  } catch {
+    const karachiTime = new Date(date.getTime() + (date.getTimezoneOffset() + 300) * 60000);
+    return karachiTime.toLocaleTimeString('en-US');
+  }
+}
+
+/**
+ * Adds/subtracts days on a 'YYYY-MM-DD' date string using pure UTC calendar math.
+ */
+export function addDaysToDateStr(dateStr: string, deltaDays: number): string {
+  const { year, month, day } = parseDateParts(dateStr);
+  const dt = new Date(Date.UTC(year, month - 1, day + deltaDays));
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /**
@@ -265,7 +362,8 @@ export function calculateInstallmentDueDate(
 /**
  * Dynamically computes installment status based on payment state and today's Karachi date.
  * - Paid: remaining is 0 or paidAmount >= amount
- * - Partial: paidAmount > 0 and remaining > 0
+ * - Partial - Overdue: paidAmount > 0 and remaining > 0 and dueDate < today
+ * - Partial: paidAmount > 0 and remaining > 0 and dueDate >= today
  * - Overdue: unpaid and dueDate < today
  * - Due: unpaid and dueDate === today
  * - Upcoming: unpaid and dueDate > today
@@ -288,11 +386,15 @@ export function computeInstallmentStatus(
     return 'Paid';
   }
 
+  const due = (inst.dueDate || '').split('T')[0];
+
   if (paid > 0) {
+    if (due && due < todayStr) {
+      return 'Partial - Overdue';
+    }
     return 'Partial';
   }
 
-  const due = (inst.dueDate || '').split('T')[0];
   if (!due) return 'Upcoming';
 
   if (due < todayStr) {
@@ -352,7 +454,7 @@ export function generateInstallmentSchedule(
 export function isInstallmentOverdue(inst: Installment): boolean {
   if (!inst) return false;
   const status = computeInstallmentStatus(inst);
-  return status === 'Overdue' || status === 'Late';
+  return status === 'Overdue' || status === 'Late' || status === 'Partial - Overdue';
 }
 
 export function getDaysLate(dueDateStr: string): number {

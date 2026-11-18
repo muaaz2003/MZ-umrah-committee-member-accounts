@@ -30,9 +30,15 @@ import {
   restoreMemberToActive,
   deleteReceiptAndRevertPayment,
   updateReceiptDetails,
+  stripPhotosForCache,
   DEFAULT_SETTINGS,
 } from './services/firebaseService';
-import { calculateFinancialSummary, isInstallmentOverdue } from './utils/calculations';
+import {
+  calculateFinancialSummary,
+  computeInstallmentStatus,
+  isInstallmentOverdue,
+  getTodayKarachiDate,
+} from './utils/calculations';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase/config';
 import { Header } from './components/Header';
@@ -116,6 +122,7 @@ export function App() {
   const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isDeletingMember, setIsDeletingMember] = useState(false);
+  const [deleteMemberError, setDeleteMemberError] = useState<string | null>(null);
   const [activeReceipt, setActiveReceipt] = useState<Receipt | null>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isReceiptDuplicate, setIsReceiptDuplicate] = useState(false);
@@ -265,12 +272,28 @@ export function App() {
   };
 
   // Calculated Financial Summary
-  const summary = calculateFinancialSummary(members, payments, refunds);
+  const summary = calculateFinancialSummary(
+    members,
+    payments,
+    refunds,
+    cancellations,
+    qarzaAgreements
+  );
 
-  // Overdue count and today due count
-  const overdueCount = installments.filter((i) => isInstallmentOverdue(i)).length;
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayDueCount = installments.filter((i) => i.dueDate === todayStr && i.status !== 'Paid').length;
+  // Overdue count and today due count (Active members only)
+  const activeMemberIds = new Set(
+    members.filter((m) => m.status === 'Active').map((m) => m.id)
+  );
+  const overdueCount = installments.filter(
+    (i) => activeMemberIds.has(i.memberId) && isInstallmentOverdue(i)
+  ).length;
+  const todayStr = getTodayKarachiDate();
+  const todayDueCount = installments.filter(
+    (i) =>
+      activeMemberIds.has(i.memberId) &&
+      i.dueDate === todayStr &&
+      computeInstallmentStatus(i, todayStr) !== 'Paid'
+  ).length;
 
   // Role Switcher Handler (to test Flow 7: Member login, Flow 8: Staff login, etc.)
   const handleSwitchUserRole = (role: UserRole, memberId?: string) => {
@@ -373,6 +396,7 @@ export function App() {
 
   // Open Delete Member Confirmation (Surety) Modal
   const handleOpenDeleteMember = (member: Member) => {
+    setDeleteMemberError(null);
     setMemberToDelete(member);
     setIsDeleteModalOpen(true);
   };
@@ -391,11 +415,16 @@ export function App() {
   const handleConfirmDeleteMember = async (memberId: string) => {
     try {
       setIsDeletingMember(true);
-      // 1. Instant optimistic UI deletion
+      setDeleteMemberError(null);
+
+      // 1. Perform Firestore complete batch delete first (respects Active/Defaulted loan block)
+      await deleteMemberCompletely(memberId, currentUser.email);
+
+      // 2. Update local UI state after Firestore succeeds
       setMembers((prev) => {
         const next = prev.filter((m) => m.id !== memberId);
         try {
-          localStorage.setItem('mz_cached_members', JSON.stringify(next));
+          localStorage.setItem('mz_cached_members', JSON.stringify(stripPhotosForCache(next)));
         } catch {}
         return next;
       });
@@ -403,14 +432,14 @@ export function App() {
       setPayments((prev) => prev.filter((p) => p.memberId !== memberId));
       setReceipts((prev) => prev.filter((r) => r.memberId !== memberId));
       setRefunds((prev) => prev.filter((rf) => rf.memberId !== memberId));
+      setCancellations((prev) =>
+        prev.filter((c) => !(c.memberId === memberId && c.status === 'Settled'))
+      );
 
       if (selectedMemberId === memberId) {
         setSelectedMemberId(null);
         setCurrentPage('members');
       }
-
-      // 2. Perform Firestore complete batch delete
-      await deleteMemberCompletely(memberId, currentUser.email);
 
       setIsDeletingMember(false);
       setIsDeleteModalOpen(false);
@@ -418,12 +447,10 @@ export function App() {
 
       // 3. Silent background refresh
       loadAllData(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to delete member:', err);
       setIsDeletingMember(false);
-      setIsDeleteModalOpen(false);
-      setMemberToDelete(null);
-      loadAllData(false);
+      setDeleteMemberError(err?.message || 'ممبر کو حذف کرنے میں خرابی پیش آئی۔');
     }
   };
 
@@ -434,7 +461,7 @@ export function App() {
       setMembers((prev) => {
         const next = prev.map((m) => (m.id === memberId ? { ...m, status: 'Active' as const } : m));
         try {
-          localStorage.setItem('mz_cached_members', JSON.stringify(next));
+          localStorage.setItem('mz_cached_members', JSON.stringify(stripPhotosForCache(next)));
         } catch {}
         return next;
       });
@@ -821,10 +848,12 @@ export function App() {
           if (!isDeletingMember) {
             setIsDeleteModalOpen(false);
             setMemberToDelete(null);
+            setDeleteMemberError(null);
           }
         }}
         onConfirmDelete={handleConfirmDeleteMember}
         isDeleting={isDeletingMember}
+        errorMessage={deleteMemberError}
       />
 
       {/* Official Umrah Committee Printable Receipt Modal */}

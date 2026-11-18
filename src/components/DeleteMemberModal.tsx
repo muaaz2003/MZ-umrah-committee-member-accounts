@@ -8,6 +8,7 @@ interface DeleteMemberModalProps {
   onClose: () => void;
   onConfirmDelete: (memberId: string) => Promise<void> | void;
   isDeleting?: boolean;
+  errorMessage?: string | null;
 }
 
 export const DeleteMemberModal: React.FC<DeleteMemberModalProps> = ({
@@ -16,6 +17,7 @@ export const DeleteMemberModal: React.FC<DeleteMemberModalProps> = ({
   onClose,
   onConfirmDelete,
   isDeleting = false,
+  errorMessage = null,
 }) => {
   if (!isOpen || !member) return null;
 
@@ -70,6 +72,12 @@ export const DeleteMemberModal: React.FC<DeleteMemberModalProps> = ({
               {member.fullName}
             </span>
           </div>
+
+          {errorMessage && (
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold text-right" dir="rtl">
+              {errorMessage}
+            </div>
+          )}
         </div>
 
         {/* Compact Action Buttons */}

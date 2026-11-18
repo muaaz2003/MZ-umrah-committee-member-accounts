@@ -147,7 +147,10 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
         return <span className="bg-green-100 text-green-700 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Paid</span>;
       case 'Partial':
         return <span className="bg-amber-100 text-amber-700 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Partial</span>;
+      case 'Partial - Overdue':
+        return <span className="bg-rose-100 text-rose-700 border border-rose-200 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Partial - Overdue</span>;
       case 'Overdue':
+      case 'Late':
         return <span className="bg-rose-100 text-rose-700 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Overdue</span>;
       case 'Due':
         return <span className="bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase">Due Today</span>;
@@ -372,7 +375,13 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
               <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                 <div className="text-[10px] text-gray-400 uppercase font-bold">Installments</div>
                 <div className="text-base sm:text-lg font-bold text-gray-600">
-                  {installments.filter((i) => i.status === 'Paid').length.toString().padStart(2, '0')} / {member.planMonths}
+                  {(() => {
+                    const todayStr = getTodayKarachiDate();
+                    return installments
+                      .filter((i) => computeInstallmentStatus(i, todayStr) === 'Paid')
+                      .length.toString()
+                      .padStart(2, '0');
+                  })()} / {member.planMonths}
                 </div>
               </div>
             </div>
@@ -510,7 +519,10 @@ export const MemberProfilePage: React.FC<MemberProfilePageProps> = ({
                               (r.installmentNumber === inst.installmentNumber && (r.installmentsCovered?.length || 0) <= 1)
                           )
                         : undefined;
-                      const isToday = liveStatus === 'Partial' || (liveStatus !== 'Paid' && inst.dueDate.startsWith(todayStr.slice(0, 7)));
+                      const isToday =
+                        liveStatus === 'Partial' ||
+                        liveStatus === 'Partial - Overdue' ||
+                        (liveStatus !== 'Paid' && inst.dueDate.startsWith(todayStr.slice(0, 7)));
                       return (
                         <tr
                           key={inst.id}

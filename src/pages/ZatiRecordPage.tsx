@@ -19,7 +19,12 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Member, Installment, Receipt } from '../types';
-import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import {
+  formatPKR,
+  formatDateDisplay,
+  computeInstallmentStatus,
+  getTodayKarachiDate,
+} from '../utils/calculations';
 import mzaLogo from '../assets/images/mza-logo.png';
 
 interface ZatiRecordPageProps {
@@ -111,7 +116,10 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
     ? Math.min(100, Math.round((matchedMember.paidAmount / matchedMember.totalCommitteeAmount) * 1000) / 10)
     : 0;
 
-  const paidCount = memberInstallments.filter((i) => i.status === 'Paid').length;
+  const todayStr = getTodayKarachiDate();
+  const paidCount = memberInstallments.filter(
+    (i) => computeInstallmentStatus(i, todayStr) === 'Paid'
+  ).length;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
@@ -500,15 +508,18 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {memberInstallments.map((inst) => {
-                      const isPaid = inst.status === 'Paid';
-                      const isLate = inst.status === 'Late' || inst.status === 'Overdue';
-                      const isDue = inst.status === 'Due';
+                      const liveStatus = computeInstallmentStatus(inst, todayStr);
+                      const isPaid = liveStatus === 'Paid';
+                      const isPartialOverdue = liveStatus === 'Partial - Overdue';
+                      const isPartial = liveStatus === 'Partial';
+                      const isLate = liveStatus === 'Late' || liveStatus === 'Overdue' || isPartialOverdue;
+                      const isDue = liveStatus === 'Due';
 
                       return (
                         <tr
                           key={inst.id}
                           className={`hover:bg-gray-50/70 transition-colors ${
-                            isPaid ? 'bg-emerald-50/20' : isLate ? 'bg-rose-50/20' : ''
+                            isPaid ? 'bg-emerald-50/20' : isLate ? 'bg-rose-50/20' : isPartial ? 'bg-amber-50/20' : ''
                           }`}
                         >
                           <td className="py-3.5 px-4 font-bold text-gray-900">
@@ -527,7 +538,7 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : isLate
                                   ? 'bg-rose-100 text-rose-800'
-                                  : isDue
+                                  : isPartial || isDue
                                   ? 'bg-amber-100 text-amber-800'
                                   : 'bg-gray-100 text-gray-600'
                               }`}
@@ -536,6 +547,16 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                                 <>
                                   <span>ادا شدہ</span>
                                   <span dir="ltr" className="font-sans text-[9px] font-bold">(Paid)</span>
+                                </>
+                              ) : isPartialOverdue ? (
+                                <>
+                                  <span>جزوی تاخیر</span>
+                                  <span dir="ltr" className="font-sans text-[9px] font-bold">(Partial - Overdue)</span>
+                                </>
+                              ) : isPartial ? (
+                                <>
+                                  <span>جزوی ادائیگی</span>
+                                  <span dir="ltr" className="font-sans text-[9px] font-bold">(Partial)</span>
                                 </>
                               ) : isLate ? (
                                 <>
@@ -568,24 +589,25 @@ export const ZatiRecordPage: React.FC<ZatiRecordPageProps> = ({
                             )}
                           </td>
                           <td className="py-3.5 px-4 text-left">
-                            {isPaid && (
-                              <button
-                                onClick={() => {
-                                  const matchingRec = receipts.find(
-                                    (r) =>
-                                      r.memberId === matchedMember.id &&
-                                      r.installmentNumber === inst.installmentNumber
-                                  );
-                                  if (matchingRec) {
-                                    onOpenReceipt(matchingRec);
-                                  }
-                                }}
-                                className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 font-urdu"
-                              >
-                                <ReceiptIcon className="w-3 h-3" />
-                                <span>رسید دیکھیں</span>
-                              </button>
-                            )}
+                            {(isPaid || inst.paidAmount > 0) && (() => {
+                              const matchingRec = receipts.find(
+                                (r) =>
+                                  r.memberId === matchedMember.id &&
+                                  (r.installmentNumber === inst.installmentNumber ||
+                                    (r.installmentsCovered && r.installmentsCovered.includes(inst.installmentNumber)) ||
+                                    (inst.receiptNumber && inst.receiptNumber.includes(r.receiptNumber)))
+                              );
+                              if (!matchingRec) return null;
+                              return (
+                                <button
+                                  onClick={() => onOpenReceipt(matchingRec)}
+                                  className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 font-urdu"
+                                >
+                                  <ReceiptIcon className="w-3 h-3" />
+                                  <span>رسید دیکھیں</span>
+                                </button>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );

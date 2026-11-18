@@ -19,7 +19,7 @@ import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import { Member, CancellationNotice } from '../types';
 import { recordCancellationNotice } from '../services/firebaseService';
-import { formatPKR, numberToWordsUrdu } from '../utils/calculations';
+import { formatPKR, getTodayKarachiDate, numberToWordsUrdu } from '../utils/calculations';
 import mzaLogo from '../assets/images/mza-logo.png';
 import mzaStamp from '../assets/images/mza-stamp.png';
 
@@ -76,7 +76,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
     if (existingNotice) {
       setSelectedMemberId(existingNotice.memberId || '');
       setNoticeNumber(existingNotice.noticeNumber || '');
-      setNoticeDate(existingNotice.noticeDate || new Date().toISOString().split('T')[0]);
+      setNoticeDate(existingNotice.noticeDate || getTodayKarachiDate());
       setSalutation(existingNotice.salutation || 'محترم جناب');
       setFullName(existingNotice.fullName || '');
       setRelationType(existingNotice.relationType || 'ولد');
@@ -96,7 +96,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
       return;
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getTodayKarachiDate();
     setNoticeDate(todayStr);
 
     const randomSuffix = Math.floor(100 + Math.random() * 900);
@@ -213,7 +213,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
         cnic: cnic.trim(),
         address: address.trim(),
         mobile: mobile.trim(),
-        noticeDate: noticeDate || new Date().toISOString().split('T')[0],
+        noticeDate: noticeDate || getTodayKarachiDate(),
         subject: subject.trim(),
         planMonths,
         installmentAmount,

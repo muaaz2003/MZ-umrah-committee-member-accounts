@@ -10,7 +10,9 @@ import {
   orderBy,
   where,
   writeBatch,
+  runTransaction,
   serverTimestamp,
+  DocumentReference,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import {
@@ -34,6 +36,7 @@ import {
   calculateInstallmentDueDate,
   computeInstallmentStatus,
   getTodayKarachiDate,
+  getKarachiTimeString,
   COMMITTEE_FIRST_DUE_DATE,
   PLAN_A_TOTAL,
   PLAN_B_TOTAL,
@@ -73,6 +76,58 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
+}
+
+export function removeUndefined<T>(obj: T): T {
+  if (Array.isArray(obj)) {
+    return obj.map((item) => removeUndefined(item)) as unknown as T;
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const proto = Object.getPrototypeOf(obj);
+    if (proto !== Object.prototype && proto !== null) {
+      return obj;
+    }
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = removeUndefined(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
+export function stripPhotosForCache(membersList: Member[]): Member[] {
+  return membersList.map(({ memberPhoto: _photo, ...rest }) => rest as Member);
+}
+
+type BatchOp =
+  | { type: 'set'; ref: DocumentReference; data: Record<string, any>; merge?: boolean }
+  | { type: 'update'; ref: DocumentReference; data: Record<string, any> }
+  | { type: 'delete'; ref: DocumentReference };
+
+export async function commitInChunks(ops: BatchOp[], chunkSize: number = 400): Promise<void> {
+  if (ops.length === 0) return;
+  for (let i = 0; i < ops.length; i += chunkSize) {
+    const chunk = ops.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    for (const op of chunk) {
+      if (op.type === 'set') {
+        const cleanData = removeUndefined(op.data);
+        if (op.merge) {
+          batch.set(op.ref, cleanData, { merge: true });
+        } else {
+          batch.set(op.ref, cleanData);
+        }
+      } else if (op.type === 'update') {
+        batch.update(op.ref, removeUndefined(op.data));
+      } else if (op.type === 'delete') {
+        batch.delete(op.ref);
+      }
+    }
+    await batch.commit();
+  }
 }
 
 export const DEFAULT_SETTINGS: CommitteeSettings = {
@@ -116,7 +171,7 @@ export async function getSettings(): Promise<CommitteeSettings> {
       };
     }
     // Set default settings
-    await setDoc(docRef, DEFAULT_SETTINGS);
+    await setDoc(docRef, removeUndefined(DEFAULT_SETTINGS));
     return DEFAULT_SETTINGS;
   } catch (error) {
     console.warn('Could not fetch settings from Firestore, returning defaults:', error);
@@ -128,24 +183,28 @@ export async function updateSettings(settings: Partial<CommitteeSettings>, userE
   const path = 'settings';
   try {
     const docRef = doc(db, path, 'general');
-    await setDoc(docRef, { ...settings, updatedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(docRef, removeUndefined({ ...settings, updatedAt: new Date().toISOString() }), { merge: true });
 
-    // If registrationFee was updated in settings, synchronize all members automatically
+    // If registrationFee was updated in settings, synchronize ONLY Unpaid members automatically
     const targetFee = settings.registrationFee !== undefined ? Number(settings.registrationFee) : settings.defaultRegistrationFee !== undefined ? Number(settings.defaultRegistrationFee) : undefined;
     if (targetFee !== undefined && !isNaN(targetFee)) {
       const membersSnap = await getDocs(collection(db, 'members'));
-      const batch = writeBatch(db);
-      let updatedCount = 0;
+      const ops: BatchOp[] = [];
+      const syncTimestamp = new Date().toISOString();
       membersSnap.forEach((mDoc) => {
-        batch.update(mDoc.ref, {
-          registrationFee: targetFee,
-          updatedAt: new Date().toISOString(),
-        });
-        updatedCount++;
+        const mData = mDoc.data() as Member;
+        if (mData.registrationFeeStatus !== 'Paid') {
+          ops.push({
+            type: 'update',
+            ref: mDoc.ref,
+            data: {
+              registrationFee: targetFee,
+              updatedAt: syncTimestamp,
+            },
+          });
+        }
       });
-      if (updatedCount > 0) {
-        await batch.commit();
-      }
+      await commitInChunks(ops, 400);
     }
 
     await logAudit(userEmail, 'SUPER ADMIN', 'UPDATE_SETTINGS', 'Settings', 'general', 'Updated committee general settings');
@@ -174,14 +233,14 @@ export async function logAudit(
       user,
       userRole,
       action,
-      date: now.toISOString().split('T')[0],
-      time: now.toLocaleTimeString(),
+      date: getTodayKarachiDate(),
+      time: getKarachiTimeString(now),
       recordType,
       recordId,
       details,
       createdAt: now.toISOString(),
     };
-    await setDoc(doc(db, path, logId), logEntry);
+    await setDoc(doc(db, path, logId), removeUndefined(logEntry));
   } catch (error) {
     console.warn('Could not record audit log: ', error);
   }
@@ -207,7 +266,7 @@ export async function getMembers(): Promise<Member[]> {
     const members = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Member) }));
     const sorted = members.sort((a, b) => (a.memberNumber > b.memberNumber ? 1 : -1));
     try {
-      localStorage.setItem('mz_cached_members', JSON.stringify(sorted));
+      localStorage.setItem('mz_cached_members', JSON.stringify(stripPhotosForCache(sorted)));
     } catch {}
     return sorted;
   } catch (error) {
@@ -233,22 +292,79 @@ export async function getMemberById(memberId: string): Promise<Member | null> {
   }
 }
 
-export async function getNextMembershipNumber(): Promise<string> {
-  try {
-    const members = await getMembers();
-    let maxNumber = 1;
-    for (const m of members) {
-      // Expect format "MZA-#001", "MZ-#001", etc.
-      const match = m.memberNumber?.match(/(?:MZA|MZ)-#(\d+)/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num >= maxNumber) maxNumber = num + 1;
-      }
+const COUNTERS_DOC_REF = () => doc(db, 'settings', 'counters');
+
+async function getMaxExistingMemberNumber(): Promise<number> {
+  const snap = await getDocs(collection(db, 'members'));
+  let maxNumber = 0;
+  snap.forEach((d) => {
+    const m = d.data() as Member;
+    const match = m.memberNumber?.match(/(?:MZA|MZ)-#(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (Number.isFinite(num) && num > maxNumber) maxNumber = num;
     }
-    return `MZA-#${String(maxNumber).padStart(3, '0')}`;
+  });
+  return maxNumber;
+}
+
+async function getMaxExistingReceiptNumber(): Promise<number> {
+  const snap = await getDocs(collection(db, 'receipts'));
+  let maxNumber = 0;
+  snap.forEach((d) => {
+    const r = d.data() as Receipt;
+    const match = r.receiptNumber?.match(/(?:MZA|MZ)-RCP-(\d+)/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (Number.isFinite(num) && num > maxNumber) maxNumber = num;
+    }
+  });
+  return maxNumber;
+}
+
+export async function peekNextMembershipNumber(): Promise<string> {
+  try {
+    const counterRef = COUNTERS_DOC_REF();
+    const counterSnap = await getDoc(counterRef);
+    const storedLast =
+      counterSnap.exists() && typeof counterSnap.data()?.lastMemberNumber === 'number'
+        ? counterSnap.data()!.lastMemberNumber
+        : 0;
+    const existingMax = await getMaxExistingMemberNumber();
+    const nextNum = Math.max(storedLast, existingMax) + 1;
+    return `MZA-#${String(nextNum).padStart(3, '0')}`;
   } catch {
     return `MZA-#001`;
   }
+}
+
+export async function getNextMembershipNumber(requestedNumber?: string): Promise<string> {
+  const counterRef = COUNTERS_DOC_REF();
+  const initialSnap = await getDoc(counterRef);
+  let seededMax = 0;
+  if (!initialSnap.exists() || typeof initialSnap.data()?.lastMemberNumber !== 'number') {
+    seededMax = await getMaxExistingMemberNumber();
+  }
+
+  const reqMatch = requestedNumber?.trim().match(/^(?:MZA|MZ)-#(\d+)$/);
+  const reqNum = reqMatch ? parseInt(reqMatch[1], 10) : NaN;
+
+  const assignedNum = await runTransaction(db, async (transaction) => {
+    const txSnap = await transaction.get(counterRef);
+    const txData = txSnap.exists() ? txSnap.data() : {};
+    const currentLast =
+      typeof txData?.lastMemberNumber === 'number' ? txData.lastMemberNumber : seededMax;
+    const baseLast = Math.max(currentLast, seededMax);
+    const next = Number.isFinite(reqNum) && reqNum > baseLast ? reqNum : baseLast + 1;
+    transaction.set(
+      counterRef,
+      removeUndefined({ lastMemberNumber: next, updatedAt: new Date().toISOString() }),
+      { merge: true }
+    );
+    return next;
+  });
+
+  return `MZA-#${String(assignedNum).padStart(3, '0')}`;
 }
 
 export async function createMember(
@@ -257,6 +373,11 @@ export async function createMember(
 ): Promise<Member> {
   const memberId = `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
+
+  const assignedMemberNumber =
+    !data.memberNumber || /^(?:MZA|MZ)-#(\d+)$/.test(data.memberNumber.trim())
+      ? await getNextMembershipNumber(data.memberNumber)
+      : data.memberNumber.trim();
 
   const planMonths = data.planMonths === 36 ? 36 : 24;
   const monthly = Math.max(5000, Math.min(10000, Number(data.monthlyInstallment) || 5000));
@@ -267,9 +388,12 @@ export async function createMember(
   const newMember: Member = {
     ...data,
     id: memberId,
+    memberNumber: assignedMemberNumber,
     planMonths,
     monthlyInstallment: monthly,
     totalCommitteeAmount: totalAmount,
+    registrationFee: Number(data.registrationFee) || 0,
+    registrationFeeStatus: data.registrationFeeStatus || 'Unpaid',
     joiningDate,
     firstInstallmentDueDate: firstDueDate,
     paidAmount: 0,
@@ -283,7 +407,7 @@ export async function createMember(
 
   // 1. Add member document
   const memberRef = doc(db, 'members', memberId);
-  batch.set(memberRef, newMember);
+  batch.set(memberRef, removeUndefined(newMember));
 
   // 2. Generate and batch add all 24 or 36 installments starting from firstDueDate on 10th
   const schedule = generateInstallmentSchedule(
@@ -298,7 +422,7 @@ export async function createMember(
   for (const item of schedule) {
     const instId = `inst_${memberId}_${item.installmentNumber}`;
     const instRef = doc(db, 'installments', instId);
-    batch.set(instRef, { ...item, id: instId });
+    batch.set(instRef, removeUndefined({ ...item, id: instId }));
   }
 
   try {
@@ -321,78 +445,113 @@ export async function updateMember(
   memberId: string,
   data: Partial<Member>,
   userEmail: string = 'admin'
-): Promise<void> {
+): Promise<Member | void> {
   const path = `members/${memberId}`;
-  try {
-    const memberRef = doc(db, 'members', memberId);
-    const existingSnap = await getDoc(memberRef);
-    const existingMember = existingSnap.exists() ? (existingSnap.data() as Member) : null;
+  const memberRef = doc(db, 'members', memberId);
+  const existingSnap = await getDoc(memberRef);
+  if (!existingSnap.exists()) {
+    throw new Error('Member not found');
+  }
+  const existingMember = existingSnap.data() as Member;
 
-    const batch = writeBatch(db);
-    batch.update(memberRef, {
-      ...data,
-      updatedAt: new Date().toISOString(),
-    });
+  const targetPlan: 24 | 36 =
+    data.planMonths === 36 || data.planMonths === 24 ? data.planMonths : existingMember.planMonths;
+  const targetMonthly =
+    data.monthlyInstallment !== undefined
+      ? Math.max(5000, Math.min(10000, Number(data.monthlyInstallment) || existingMember.monthlyInstallment || 5000))
+      : existingMember.monthlyInstallment;
+  const firstDueDate = data.firstInstallmentDueDate || existingMember.firstInstallmentDueDate || '2026-10-10';
+  const memberNum = data.memberNumber || existingMember.memberNumber || 'MZA-#001';
 
-    // Check if planMonths or monthlyInstallment changed and sync installments
-    const targetPlan = data.planMonths || existingMember?.planMonths;
-    const targetMonthly = data.monthlyInstallment || existingMember?.monthlyInstallment;
-    const firstDueDate = data.firstInstallmentDueDate || existingMember?.firstInstallmentDueDate || '2026-10-10';
-    const memberNum = data.memberNumber || existingMember?.memberNumber || 'MZA-#001';
+  const instSnap = await getDocs(
+    query(collection(db, 'installments'), where('memberId', '==', memberId))
+  );
+  const currentInsts = instSnap.docs.map((d) => ({ ...(d.data() as Installment), id: d.id }));
 
-    if (existingMember && targetPlan && targetMonthly) {
-      const instSnap = await getDocs(
-        query(collection(db, 'installments'), where('memberId', '==', memberId))
+  // Block 36 -> 24 downgrade if any installment > 24 already has payment
+  if (targetPlan === 24) {
+    const paidAfter24 = currentInsts.some(
+      (inst) => inst.installmentNumber > 24 && (inst.paidAmount || 0) > 0
+    );
+    if (paidAfter24) {
+      throw new Error(
+        'Cannot change plan from 36 to 24 months: one or more installments after Qist #24 already have payments recorded.'
       );
-      const currentInsts = instSnap.docs.map((d) => d.data() as Installment);
-      const currentCount = currentInsts.length;
+    }
+  }
 
-      // Update existing installments' base amount if monthly changed
-      currentInsts.forEach((inst) => {
+  try {
+    const batch = writeBatch(db);
+    let totalCommitteeAmountSum = 0;
+    const existingNumbers = new Set<number>();
+
+    for (const inst of currentInsts) {
+      if (targetPlan === 24 && inst.installmentNumber > 24) {
+        // Safe to delete since we already verified paidAmount === 0
+        batch.delete(doc(db, 'installments', inst.id));
+        continue;
+      }
+
+      existingNumbers.add(inst.installmentNumber);
+      const paidAmt = inst.paidAmount || 0;
+
+      if (paidAmt > 0) {
+        // NEVER change amount of installments that already have payments recorded
+        totalCommitteeAmountSum += inst.amount || 0;
+      } else {
         if (inst.amount !== targetMonthly) {
-          const instDocRef = doc(db, 'installments', inst.id);
-          const newRemaining = Math.max(0, targetMonthly - (inst.paidAmount || 0));
-          const newStatus = newRemaining === 0 ? 'Paid' : (inst.paidAmount > 0 ? 'Partial' : 'Upcoming');
-          batch.update(instDocRef, {
-            amount: targetMonthly,
-            remainingAmount: newRemaining,
-            status: newStatus,
-          });
+          batch.update(
+            doc(db, 'installments', inst.id),
+            removeUndefined({
+              amount: targetMonthly,
+              remainingAmount: targetMonthly,
+            })
+          );
         }
-      });
-
-      // If plan changed from 24 to 36, create missing installments 25 to 36
-      if (targetPlan === 36 && currentCount < 36) {
-        for (let num = currentCount + 1; num <= 36; num++) {
-          const dueDate = calculateInstallmentDueDate(firstDueDate, num, 10);
-          const instId = `inst_${memberId}_${String(num).padStart(2, '0')}`;
-          const newInst: Installment = {
-            id: instId,
-            memberId,
-            memberNumber: memberNum,
-            installmentNumber: num,
-            dueDate,
-            amount: targetMonthly,
-            paidAmount: 0,
-            remainingAmount: targetMonthly,
-            status: 'Upcoming',
-            createdAt: new Date().toISOString(),
-          };
-          batch.set(doc(db, 'installments', instId), newInst);
-        }
-      } else if (targetPlan === 24 && currentCount > 24) {
-        // If reduced to 24, delete unpaid installments > 24
-        instSnap.docs.forEach((d) => {
-          const instData = d.data() as Installment;
-          if (instData.installmentNumber > 24 && (instData.paidAmount || 0) === 0) {
-            batch.delete(d.ref);
-          }
-        });
+        totalCommitteeAmountSum += targetMonthly;
       }
     }
 
+    // Create any missing installments for targetPlan (e.g. 25..36 when upgrading 24 -> 36)
+    for (let num = 1; num <= targetPlan; num++) {
+      if (!existingNumbers.has(num)) {
+        const dueDate = calculateInstallmentDueDate(firstDueDate, num, 10);
+        const instId = `inst_${memberId}_${String(num).padStart(2, '0')}`;
+        const newInst: Installment = {
+          id: instId,
+          memberId,
+          memberNumber: memberNum,
+          installmentNumber: num,
+          dueDate,
+          amount: targetMonthly,
+          paidAmount: 0,
+          remainingAmount: targetMonthly,
+          status: 'Upcoming',
+          createdAt: new Date().toISOString(),
+        };
+        batch.set(doc(db, 'installments', instId), removeUndefined(newInst));
+        totalCommitteeAmountSum += targetMonthly;
+      }
+    }
+
+    const { dueAmount: _ignoredDue, paidAmount: _ignoredPaid, advanceAmount: _ignoredAdv, ...safeData } = data;
+    batch.update(
+      memberRef,
+      removeUndefined({
+        ...safeData,
+        planMonths: targetPlan,
+        monthlyInstallment: targetMonthly,
+        totalCommitteeAmount: totalCommitteeAmountSum > 0 ? totalCommitteeAmountSum : targetPlan * targetMonthly,
+        updatedAt: new Date().toISOString(),
+      })
+    );
+
     await batch.commit();
+    await recalculateMemberInstallmentsAndFinancials(memberId);
+
+    const freshSnap = await getDoc(memberRef);
     await logAudit(userEmail, 'ADMIN', 'UPDATE_MEMBER', 'Member', memberId, `Updated member profile details and synced installments`);
+    return freshSnap.exists() ? ({ id: freshSnap.id, ...(freshSnap.data() as Member) }) : undefined;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -403,6 +562,22 @@ export async function deleteMemberCompletely(
   userEmail: string = 'admin'
 ): Promise<{ success: boolean; message: string }> {
   const path = `members/${memberId}`;
+
+  // Block deletion if member has any Active or Defaulted Qarza-e-Hasana loan
+  const qarzaSnap = await getDocs(
+    query(collection(db, 'qarzaHasana'), where('memberId', '==', memberId))
+  );
+  const blockingLoan = qarzaSnap.docs.find((d) => {
+    const qData = d.data() as QarzaHasanaAgreement;
+    return qData.status === 'Active' || qData.status === 'Defaulted';
+  });
+  if (blockingLoan) {
+    const qData = blockingLoan.data() as QarzaHasanaAgreement;
+    throw new Error(
+      `اس ممبر کو حذف نہیں کیا جا سکتا کیونکہ ان کا قرضِ حسنہ (${qData.agreementNumber} - ${qData.status}) ابھی باقی ہے۔`
+    );
+  }
+
   try {
     // 1. Fetch existing member data for informative audit logging
     const memberDocRef = doc(db, 'members', memberId);
@@ -411,25 +586,32 @@ export async function deleteMemberCompletely(
     const memberName = memberData?.fullName || memberId;
     const memberNum = memberData?.memberNumber || '';
 
-    // 2. Batch delete all associated records (installments, payments, receipts, refunds)
-    const batch = writeBatch(db);
+    // 2. Chunked batch delete all associated records (installments, payments, receipts, refunds, settled cancellations)
+    const ops: BatchOp[] = [];
 
-    const [instSnap, paySnap, recSnap, refSnap] = await Promise.all([
+    const [instSnap, paySnap, recSnap, refSnap, canSnap] = await Promise.all([
       getDocs(query(collection(db, 'installments'), where('memberId', '==', memberId))),
       getDocs(query(collection(db, 'payments'), where('memberId', '==', memberId))),
       getDocs(query(collection(db, 'receipts'), where('memberId', '==', memberId))),
       getDocs(query(collection(db, 'refunds'), where('memberId', '==', memberId))),
+      getDocs(query(collection(db, 'cancellations'), where('memberId', '==', memberId))),
     ]);
 
-    instSnap.forEach((d) => batch.delete(d.ref));
-    paySnap.forEach((d) => batch.delete(d.ref));
-    recSnap.forEach((d) => batch.delete(d.ref));
-    refSnap.forEach((d) => batch.delete(d.ref));
+    instSnap.forEach((d) => ops.push({ type: 'delete', ref: d.ref }));
+    paySnap.forEach((d) => ops.push({ type: 'delete', ref: d.ref }));
+    recSnap.forEach((d) => ops.push({ type: 'delete', ref: d.ref }));
+    refSnap.forEach((d) => ops.push({ type: 'delete', ref: d.ref }));
+    canSnap.forEach((d) => {
+      const cData = d.data() as CancellationNotice;
+      if (cData.status === 'Settled') {
+        ops.push({ type: 'delete', ref: d.ref });
+      }
+    });
 
     // Delete the member document itself
-    batch.delete(memberDocRef);
+    ops.push({ type: 'delete', ref: memberDocRef });
 
-    await batch.commit();
+    await commitInChunks(ops, 400);
 
     // 3. Log audit event
     await logAudit(
@@ -461,11 +643,14 @@ export async function archiveMember(
     if (!member) return { success: false, message: 'Member not found' };
 
     // Soft delete / archive protection: preserve records
-    await updateDoc(doc(db, 'members', memberId), {
-      status: 'Archived',
-      notes: member.notes ? `${member.notes} | Archived: ${reason}` : `Archived: ${reason}`,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateDoc(
+      doc(db, 'members', memberId),
+      removeUndefined({
+        status: 'Archived',
+        notes: member.notes ? `${member.notes} | Archived: ${reason}` : `Archived: ${reason}`,
+        updatedAt: new Date().toISOString(),
+      })
+    );
 
     await logAudit(
       userEmail,
@@ -491,10 +676,13 @@ export async function restoreMemberToActive(
     if (!member) return { success: false, message: 'Member not found' };
 
     const now = new Date().toISOString();
-    await updateDoc(doc(db, 'members', memberId), {
-      status: 'Active',
-      updatedAt: now,
-    });
+    await updateDoc(
+      doc(db, 'members', memberId),
+      removeUndefined({
+        status: 'Active',
+        updatedAt: now,
+      })
+    );
 
     await logAudit(
       userEmail,
@@ -521,10 +709,13 @@ export async function toggleRegistrationFee(
 ): Promise<void> {
   const path = `members/${memberId}`;
   try {
-    await updateDoc(doc(db, 'members', memberId), {
-      registrationFeeStatus: status,
-      updatedAt: new Date().toISOString(),
-    });
+    await updateDoc(
+      doc(db, 'members', memberId),
+      removeUndefined({
+        registrationFeeStatus: status,
+        updatedAt: new Date().toISOString(),
+      })
+    );
     await logAudit(
       userEmail,
       'STAFF',
@@ -567,21 +758,28 @@ export async function getAllInstallments(): Promise<Installment[]> {
 // PAYMENTS & RECEIPTS SERVICE ("QIST WASOOL KAREIN")
 // -------------------------------------------------------------
 export async function getNextReceiptNumber(): Promise<string> {
-  try {
-    const snap = await getDocs(collection(db, 'receipts'));
-    let maxNumber = 1;
-    for (const d of snap.docs) {
-      const r = d.data() as Receipt;
-      const match = r.receiptNumber?.match(/(?:MZA|MZ)-RCP-(\d+)/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num >= maxNumber) maxNumber = num + 1;
-      }
-    }
-    return `MZA-RCP-${String(maxNumber).padStart(4, '0')}`;
-  } catch {
-    return `MZA-RCP-0001`;
+  const counterRef = COUNTERS_DOC_REF();
+  const initialSnap = await getDoc(counterRef);
+  let seededMax = 0;
+  if (!initialSnap.exists() || typeof initialSnap.data()?.lastReceiptNumber !== 'number') {
+    seededMax = await getMaxExistingReceiptNumber();
   }
+
+  const nextNum = await runTransaction(db, async (transaction) => {
+    const txSnap = await transaction.get(counterRef);
+    const txData = txSnap.exists() ? txSnap.data() : {};
+    const currentLast =
+      typeof txData?.lastReceiptNumber === 'number' ? txData.lastReceiptNumber : seededMax;
+    const next = Math.max(currentLast, seededMax) + 1;
+    transaction.set(
+      counterRef,
+      removeUndefined({ lastReceiptNumber: next, updatedAt: new Date().toISOString() }),
+      { merge: true }
+    );
+    return next;
+  });
+
+  return `MZA-RCP-${String(nextNum).padStart(4, '0')}`;
 }
 
 export interface RecordPaymentPayload {
@@ -602,106 +800,65 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
   installment: Installment;
   member: Member;
 }> {
+  const currentPayment = Number(payload.amountReceived);
+  if (!Number.isFinite(currentPayment) || currentPayment <= 0) {
+    throw new Error('Payment amount must be a valid number greater than 0.');
+  }
+
   const member = await getMemberById(payload.memberId);
   if (!member) throw new Error('Member not found');
+
+  if (member.status === 'Cancelled' || member.status === 'Refunded' || member.status === 'Archived') {
+    throw new Error(`Cannot record payment for a ${member.status} member.`);
+  }
 
   const allInstallments = await getInstallmentsForMember(payload.memberId);
   const sortedInstallments = allInstallments.sort((a, b) => a.installmentNumber - b.installmentNumber);
 
-  // Identify target starting installment
+  // Identify target starting installment for metadata
   let startIdx = 0;
   if (payload.installmentId) {
     const foundIdx = sortedInstallments.findIndex((i) => i.id === payload.installmentId);
     if (foundIdx !== -1) startIdx = foundIdx;
   }
-  // Helper to reliably detect fully paid installment
+  const todayStr = getTodayKarachiDate();
   const isFullyPaid = (inst: Installment) => {
     const rem = inst.remainingAmount !== undefined ? inst.remainingAmount : (inst.amount - (inst.paidAmount || 0));
-    return rem <= 0 || inst.status === 'Paid';
+    return rem <= 0 || computeInstallmentStatus(inst, todayStr) === 'Paid';
   };
-
-  // If selected installment is already paid, automatically find earliest unpaid
   if (sortedInstallments[startIdx] && isFullyPaid(sortedInstallments[startIdx])) {
     const firstUnpaidIdx = sortedInstallments.findIndex((i) => !isFullyPaid(i));
     if (firstUnpaidIdx !== -1) startIdx = firstUnpaidIdx;
   }
 
-  const primaryInstallment = sortedInstallments[startIdx] || sortedInstallments[0];
+  const primaryInstallment = sortedInstallments[startIdx] || sortedInstallments[0] || {
+    id: `inst_${member.id}_1`,
+    memberId: member.id,
+    memberNumber: member.memberNumber,
+    installmentNumber: 1,
+    dueDate: payload.paymentDate,
+    amount: member.monthlyInstallment || 5000,
+    paidAmount: 0,
+    remainingAmount: member.monthlyInstallment || 5000,
+    status: 'Due' as InstallmentStatus,
+    createdAt: new Date().toISOString(),
+  };
+
   const receiptNumber = await getNextReceiptNumber();
   const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const receiptId = `rcp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
 
   const previousPaidAmount = member.paidAmount || 0;
-  const currentPayment = payload.amountReceived;
+  const totalPaidAfter = previousPaidAmount + currentPayment;
+  const totalCommittee = member.totalCommitteeAmount || (member.planMonths * (member.monthlyInstallment || 5000));
+  const dueAfter = Math.max(0, totalCommittee - totalPaidAfter);
+  const advanceAfter = Math.max(0, totalPaidAfter - totalCommittee);
+  const initialInstDesc = `Qist #${primaryInstallment.installmentNumber}`;
 
   const batch = writeBatch(db);
 
-  // Sequential multi-installment allocation
-  let remainingToAllocate = currentPayment;
-  const installmentsCovered: number[] = [];
-  const updatedInstallments: Installment[] = [];
-
-  // Allocate starting from startIdx onward
-  for (let i = startIdx; i < sortedInstallments.length; i++) {
-    if (remainingToAllocate <= 0) break;
-    const inst = sortedInstallments[i];
-    const instNeeded = inst.remainingAmount ?? (inst.amount - inst.paidAmount);
-    if (instNeeded <= 0) continue;
-
-    const allocated = Math.min(remainingToAllocate, instNeeded);
-    const newPaid = inst.paidAmount + allocated;
-    const newRemaining = Math.max(0, inst.amount - newPaid);
-    const newStatus: Installment['status'] = newRemaining === 0 ? 'Paid' : 'Partial';
-
-    const updatedInst: Installment = {
-      ...inst,
-      paidAmount: newPaid,
-      remainingAmount: newRemaining,
-      status: newStatus,
-      paidDate: payload.paymentDate,
-      paymentMethod: payload.paymentMethod,
-      receiptNumber: inst.receiptNumber ? `${inst.receiptNumber}, ${receiptNumber}` : receiptNumber,
-      receiptId,
-      notes: payload.notes || inst.notes || '',
-    };
-
-    batch.set(doc(db, 'installments', inst.id), updatedInst);
-    updatedInstallments.push(updatedInst);
-    installmentsCovered.push(inst.installmentNumber);
-
-    remainingToAllocate -= allocated;
-  }
-
-  // Any leftover beyond all remaining installments in plan is added to advanceAmount
-  const updatedAdvance = (member.advanceAmount || 0) + Math.max(0, remainingToAllocate);
-
-  // Calculate updated financial summary for member
-  const totalPaidAfter = previousPaidAmount + currentPayment;
-  const calc = calculateFinancialSummary(member.totalCommitteeAmount, totalPaidAfter, updatedAdvance);
-
-  let newMemberStatus = member.status;
-  if (totalPaidAfter >= member.totalCommitteeAmount) {
-    newMemberStatus = 'Completed';
-  }
-
-  const updatedMember: Member = {
-    ...member,
-    paidAmount: calc.paidAmount,
-    dueAmount: calc.dueAmount,
-    advanceAmount: calc.advanceAmount,
-    status: newMemberStatus,
-    updatedAt: now,
-  };
-  batch.set(doc(db, 'members', member.id), updatedMember);
-
-  const installmentDesc = installmentsCovered.length > 1
-    ? `Qist #${installmentsCovered.join(', #')}`
-    : installmentsCovered.length === 1
-    ? `Qist #${installmentsCovered[0]}`
-    : `Qist #${primaryInstallment.installmentNumber}`;
-
-  // 1. Create Payment Record
+  // 1. Create Payment Record (allocation is performed solely by recalculateMemberInstallmentsAndFinancials)
   const paymentRecord: Payment = {
     id: paymentId,
     memberId: member.id,
@@ -709,8 +866,8 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
     memberName: member.fullName,
     installmentId: primaryInstallment.id,
     installmentNumber: primaryInstallment.installmentNumber,
-    installmentsCovered,
-    installmentDescription: installmentDesc,
+    installmentsCovered: [primaryInstallment.installmentNumber],
+    installmentDescription: initialInstDesc,
     receiptId,
     receiptNumber,
     amountReceived: currentPayment,
@@ -723,9 +880,9 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
     allocationType: payload.allocationType || 'current',
     createdAt: now,
   };
-  batch.set(doc(db, 'payments', paymentId), paymentRecord);
+  batch.set(doc(db, 'payments', paymentId), removeUndefined(paymentRecord));
 
-  // 2. Create Single Official Receipt for total amount
+  // 2. Create Official Receipt
   const receiptRecord: Receipt = {
     id: receiptId,
     receiptNumber,
@@ -738,19 +895,19 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
     planMonths: member.planMonths,
     paymentId,
     installmentNumber: primaryInstallment.installmentNumber,
-    installmentsCovered,
-    installmentDescription: installmentDesc,
+    installmentsCovered: [primaryInstallment.installmentNumber],
+    installmentDescription: initialInstDesc,
     dueDate: primaryInstallment.dueDate,
     amount: currentPayment,
     paymentDate: payload.paymentDate,
     paymentMethod: payload.paymentMethod,
     previousPaidAmount,
     currentPayment,
-    remainingBalance: calc.dueAmount,
-    advanceAmount: calc.advanceAmount,
-    totalCommitteeAmount: member.totalCommitteeAmount,
-    totalPaidAmount: calc.paidAmount,
-    totalDueAmount: calc.dueAmount,
+    remainingBalance: dueAfter,
+    advanceAmount: advanceAfter,
+    totalCommitteeAmount: totalCommittee,
+    totalPaidAmount: totalPaidAfter,
+    totalDueAmount: dueAfter,
     registrationFeeStatus: member.registrationFeeStatus,
     notes: payload.notes || '',
     referenceNumber: payload.referenceNumber || '',
@@ -759,18 +916,47 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
     verificationStatus: 'Verified',
     createdAt: now,
   };
-  batch.set(doc(db, 'receipts', receiptId), receiptRecord);
+  batch.set(doc(db, 'receipts', receiptId), removeUndefined(receiptRecord));
 
   try {
     await batch.commit();
 
-    // Cleanly harmonize all installments, receipt descriptions, and financials
+    // Sole allocator: recalculate all installments, receipt descriptions, and member financials
     await recalculateMemberInstallmentsAndFinancials(payload.memberId);
 
-    const freshReceiptSnap = await getDoc(doc(db, 'receipts', receiptId));
+    const [freshReceiptSnap, freshMemberSnap, freshPaymentSnap, freshInstallments] = await Promise.all([
+      getDoc(doc(db, 'receipts', receiptId)),
+      getDoc(doc(db, 'members', member.id)),
+      getDoc(doc(db, 'payments', paymentId)),
+      getInstallmentsForMember(payload.memberId),
+    ]);
+
     const finalReceipt = freshReceiptSnap.exists() ? (freshReceiptSnap.data() as Receipt) : receiptRecord;
-    const freshMemberSnap = await getDoc(doc(db, 'members', member.id));
-    const finalMember = freshMemberSnap.exists() ? (freshMemberSnap.data() as Member) : updatedMember;
+    const finalMember = freshMemberSnap.exists() ? (freshMemberSnap.data() as Member) : member;
+    let finalPayment = freshPaymentSnap.exists() ? (freshPaymentSnap.data() as Payment) : paymentRecord;
+
+    // Keep payment's covered installment fields synced with recalculated receipt
+    if (
+      freshPaymentSnap.exists() &&
+      (finalReceipt.installmentDescription !== finalPayment.installmentDescription ||
+        finalReceipt.installmentNumber !== finalPayment.installmentNumber)
+    ) {
+      await updateDoc(
+        doc(db, 'payments', paymentId),
+        removeUndefined({
+          installmentNumber: finalReceipt.installmentNumber,
+          installmentsCovered: finalReceipt.installmentsCovered || [finalReceipt.installmentNumber],
+          installmentDescription: finalReceipt.installmentDescription || initialInstDesc,
+        })
+      );
+      const reReadPay = await getDoc(doc(db, 'payments', paymentId));
+      if (reReadPay.exists()) finalPayment = reReadPay.data() as Payment;
+    }
+
+    const finalInstallment =
+      freshInstallments.find((i) => i.installmentNumber === finalReceipt.installmentNumber) ||
+      freshInstallments.find((i) => i.id === primaryInstallment.id) ||
+      primaryInstallment;
 
     await logAudit(
       payload.collectedBy,
@@ -778,13 +964,13 @@ export async function recordPayment(payload: RecordPaymentPayload): Promise<{
       'RECORD_PAYMENT',
       'Payment',
       paymentId,
-      `Collected ${currentPayment} PKR from ${member.fullName} (${member.memberNumber}) covering ${finalReceipt.installmentDescription || installmentDesc} via ${payload.paymentMethod}. Generated receipt ${receiptNumber}.`
+      `Collected ${currentPayment} PKR from ${member.fullName} (${member.memberNumber}) covering ${finalReceipt.installmentDescription || initialInstDesc} via ${payload.paymentMethod}. Generated receipt ${receiptNumber}.`
     );
 
     return {
-      payment: paymentRecord,
+      payment: finalPayment,
       receipt: finalReceipt,
-      installment: updatedInstallments[0] || primaryInstallment,
+      installment: finalInstallment,
       member: finalMember,
     };
   } catch (error) {
@@ -866,7 +1052,7 @@ export async function recalculateMemberInstallmentsAndFinancials(memberId: strin
       const allocated = Math.min(remToAllocate, needed);
       currentInst.paidAmount += allocated;
       currentInst.remainingAmount = Math.max(0, currentInst.amount - currentInst.paidAmount);
-      currentInst.status = currentInst.remainingAmount === 0 ? 'Paid' : 'Partial';
+      currentInst.status = computeInstallmentStatus(currentInst, todayStr);
       currentInst.paidDate = r.paymentDate;
       currentInst.paymentMethod = r.paymentMethod;
 
@@ -918,16 +1104,38 @@ export async function recalculateMemberInstallmentsAndFinancials(memberId: strin
   }
 
   // Total amount paid by this member across all active receipts
-  const totalPaid = sortedReceipts.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const totalPaid = sortedReceipts.reduce((sum, r) => sum + Math.max(0, Number(r.amount) || 0), 0);
   const totalCommittee = member.totalCommitteeAmount || (member.planMonths * (member.monthlyInstallment || 5000));
   const totalDue = Math.max(0, totalCommittee - totalPaid);
   const advanceAmount = Math.max(0, totalPaid - totalCommittee);
-  const newMemberStatus: MemberStatus = totalPaid >= totalCommittee ? 'Completed' : 'Active';
+  const preserveTerminalStatus =
+    member.status === 'Cancelled' ||
+    member.status === 'Refunded' ||
+    member.status === 'Archived';
+  const newMemberStatus: MemberStatus = preserveTerminalStatus
+    ? member.status
+    : (totalPaid >= totalCommittee ? 'Completed' : 'Active');
 
   // Determine covered installments and description for each receipt
-  const receiptBatchUpdates: { receiptRef: any; covered: number[]; primaryInstNum: number; desc: string }[] = [];
+  const receiptBatchUpdates: {
+    receiptRef: any;
+    covered: number[];
+    primaryInstNum: number;
+    desc: string;
+    previousPaidAmount: number;
+    totalPaidAmount: number;
+    totalDueAmount: number;
+    advanceAmount: number;
+  }[] = [];
 
+  let runningPaid = 0;
   for (const r of sortedReceipts) {
+    const rAmount = Math.max(0, Number(r.amount) || 0);
+    const prevPaid = runningPaid;
+    runningPaid += rAmount;
+    const rDueAfter = Math.max(0, totalCommittee - runningPaid);
+    const rAdvAfter = Math.max(0, runningPaid - totalCommittee);
+
     const coveredNums: number[] = [];
     for (const inst of sortedInsts) {
       const currentInst = instMap.get(inst.installmentNumber)!;
@@ -950,47 +1158,69 @@ export async function recalculateMemberInstallmentsAndFinancials(memberId: strin
       covered: coveredNums,
       primaryInstNum: coveredNums[0],
       desc: instDesc,
+      previousPaidAmount: prevPaid,
+      totalPaidAmount: runningPaid,
+      totalDueAmount: rDueAfter,
+      advanceAmount: rAdvAfter,
     });
   }
 
-  // Perform Firestore batch commit
-  const batch = writeBatch(db);
+  // Perform Firestore chunked commit
+  const ops: BatchOp[] = [];
 
   // 1. Update all installments
   for (const inst of sortedInsts) {
     const updated = instMap.get(inst.installmentNumber)!;
-    batch.update(doc(db, 'installments', inst.id), {
-      amount: updated.amount,
-      paidAmount: updated.paidAmount,
-      remainingAmount: updated.remainingAmount,
-      status: updated.status,
-      paidDate: updated.paidDate || null,
-      paymentMethod: updated.paymentMethod || null,
-      receiptNumber: updated.receiptNumber || null,
-      receiptId: updated.receiptId || null,
+    ops.push({
+      type: 'update',
+      ref: doc(db, 'installments', inst.id),
+      data: {
+        amount: updated.amount,
+        paidAmount: updated.paidAmount,
+        remainingAmount: updated.remainingAmount,
+        status: updated.status,
+        paidDate: updated.paidDate || null,
+        paymentMethod: updated.paymentMethod || null,
+        receiptNumber: updated.receiptNumber || null,
+        receiptId: updated.receiptId || null,
+      },
     });
   }
 
   // 2. Update member financial summary
-  batch.update(memberRef, {
-    paidAmount: totalPaid,
-    dueAmount: totalDue,
-    advanceAmount: advanceAmount,
-    status: newMemberStatus,
-    updatedAt: new Date().toISOString(),
+  ops.push({
+    type: 'update',
+    ref: memberRef,
+    data: {
+      paidAmount: totalPaid,
+      dueAmount: totalDue,
+      advanceAmount: advanceAmount,
+      status: newMemberStatus,
+      updatedAt: new Date().toISOString(),
+    },
   });
 
-  // 3. Update receipts with correct covered installments & descriptions
+  // 3. Update receipts with correct covered installments, descriptions, and running totals
   for (const ru of receiptBatchUpdates) {
-    batch.update(ru.receiptRef, {
-      installmentsCovered: ru.covered,
-      installmentNumber: ru.primaryInstNum,
-      installmentDescription: ru.desc,
-      updatedAt: new Date().toISOString(),
+    ops.push({
+      type: 'update',
+      ref: ru.receiptRef,
+      data: {
+        installmentsCovered: ru.covered,
+        installmentNumber: ru.primaryInstNum,
+        installmentDescription: ru.desc,
+        previousPaidAmount: ru.previousPaidAmount,
+        totalPaidAmount: ru.totalPaidAmount,
+        totalDueAmount: ru.totalDueAmount,
+        remainingBalance: ru.totalDueAmount,
+        advanceAmount: ru.advanceAmount,
+        totalCommitteeAmount: totalCommittee,
+        updatedAt: new Date().toISOString(),
+      },
     });
   }
 
-  await batch.commit();
+  await commitInChunks(ops, 400);
 }
 
 export async function deleteReceiptAndRevertPayment(
@@ -1051,6 +1281,13 @@ export async function updateReceiptDetails(
   },
   userEmail: string = 'admin'
 ): Promise<void> {
+  if (updates.amount !== undefined) {
+    const parsedAmt = Number(updates.amount);
+    if (!Number.isFinite(parsedAmt) || parsedAmt <= 0) {
+      throw new Error('Receipt amount must be a valid number greater than 0.');
+    }
+  }
+
   const receiptRef = doc(db, 'receipts', receiptId);
   const snap = await getDoc(receiptRef);
   if (!snap.exists()) throw new Error('Receipt not found');
@@ -1068,16 +1305,19 @@ export async function updateReceiptDetails(
   };
 
   const batch = writeBatch(db);
-  batch.update(receiptRef, receiptUpdates);
+  batch.update(receiptRef, removeUndefined(receiptUpdates));
 
   if (receipt.paymentId) {
     const payRef = doc(db, 'payments', receipt.paymentId);
-    batch.update(payRef, {
-      ...updates,
-      amountReceived: newAmount,
-      amount: newAmount,
-      updatedAt: new Date().toISOString(),
-    });
+    batch.update(
+      payRef,
+      removeUndefined({
+        ...updates,
+        amountReceived: newAmount,
+        amount: newAmount,
+        updatedAt: new Date().toISOString(),
+      })
+    );
   }
 
   // Also update any matching payments by receiptNumber
@@ -1085,12 +1325,15 @@ export async function updateReceiptDetails(
   const payDocs = await getDocs(payQuery);
   payDocs.forEach((d) => {
     if (d.id !== receipt.paymentId) {
-      batch.update(d.ref, {
-        ...updates,
-        amountReceived: newAmount,
-        amount: newAmount,
-        updatedAt: new Date().toISOString(),
-      });
+      batch.update(
+        d.ref,
+        removeUndefined({
+          ...updates,
+          amountReceived: newAmount,
+          amount: newAmount,
+          updatedAt: new Date().toISOString(),
+        })
+      );
     }
   });
 
@@ -1130,6 +1373,11 @@ export async function recordManualPayment(payload: RecordManualPaymentPayload): 
   payment: Payment;
   receipt: Receipt;
 }> {
+  const manualAmt = Number(payload.amountReceived);
+  if (!Number.isFinite(manualAmt) || manualAmt <= 0) {
+    throw new Error('Payment amount must be a valid number greater than 0.');
+  }
+
   const receiptNumber = await getNextReceiptNumber();
   const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const receiptId = `rcp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -1189,8 +1437,8 @@ export async function recordManualPayment(payload: RecordManualPaymentPayload): 
   };
 
   const batch = writeBatch(db);
-  batch.set(doc(db, 'payments', paymentId), paymentRecord);
-  batch.set(doc(db, 'receipts', receiptId), receiptRecord);
+  batch.set(doc(db, 'payments', paymentId), removeUndefined(paymentRecord));
+  batch.set(doc(db, 'receipts', receiptId), removeUndefined(receiptRecord));
 
   try {
     await batch.commit();
@@ -1261,27 +1509,54 @@ export async function recordRefund(
   data: Omit<Refund, 'id' | 'createdAt'>,
   userEmail: string = 'admin'
 ): Promise<Refund> {
+  const refundAmt = Number(data.refundAmount);
+  if (!Number.isFinite(refundAmt) || refundAmt <= 0) {
+    throw new Error('Refund amount must be a valid number greater than 0.');
+  }
+
   const member = await getMemberById(data.memberId);
   if (!member) throw new Error('Member not found');
+
+  const memberPaid = Number(member.paidAmount) || 0;
+  if (refundAmt > memberPaid) {
+    throw new Error(
+      `Refund amount (Rs. ${refundAmt.toLocaleString()}) cannot exceed member's total paid amount (Rs. ${memberPaid.toLocaleString()}).`
+    );
+  }
+
+  if (member.status === 'Refunded') {
+    throw new Error('This member has already been refunded.');
+  }
+
+  const existingRefundsSnap = await getDocs(
+    query(collection(db, 'refunds'), where('memberId', '==', data.memberId))
+  );
+  if (!existingRefundsSnap.empty) {
+    throw new Error('A refund record already exists for this member.');
+  }
 
   const refundId = `ref_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
 
   const refundRecord: Refund = {
     ...data,
+    refundAmount: refundAmt,
     id: refundId,
     createdAt: now,
   };
 
   const batch = writeBatch(db);
-  batch.set(doc(db, 'refunds', refundId), refundRecord);
+  batch.set(doc(db, 'refunds', refundId), removeUndefined(refundRecord));
 
   // Update member record with status Refunded or cancelled
-  batch.update(doc(db, 'members', member.id), {
-    status: 'Refunded',
-    notes: member.notes ? `${member.notes} | Refunded Rs. ${data.refundAmount}` : `Refunded Rs. ${data.refundAmount}`,
-    updatedAt: now,
-  });
+  batch.update(
+    doc(db, 'members', member.id),
+    removeUndefined({
+      status: 'Refunded',
+      notes: member.notes ? `${member.notes} | Refunded Rs. ${data.refundAmount}` : `Refunded Rs. ${data.refundAmount}`,
+      updatedAt: now,
+    })
+  );
 
   try {
     await batch.commit();
@@ -1327,15 +1602,18 @@ export async function recordCancellationNotice(
   };
 
   const batch = writeBatch(db);
-  batch.set(doc(db, 'cancellations', canId), noticeRecord);
+  batch.set(doc(db, 'cancellations', canId), removeUndefined(noticeRecord));
 
   if (updateMemberStatus && data.memberId) {
     const memberRef = doc(db, 'members', data.memberId);
-    batch.update(memberRef, {
-      status: 'Cancelled',
-      notes: `Cancellation Notice #${data.noticeNumber} issued on ${data.noticeDate}. Refunded Rs. ${data.refundAmount}`,
-      updatedAt: now,
-    });
+    batch.update(
+      memberRef,
+      removeUndefined({
+        status: 'Cancelled',
+        notes: `Cancellation Notice #${data.noticeNumber} issued on ${data.noticeDate}. Refunded Rs. ${data.refundAmount}`,
+        updatedAt: now,
+      })
+    );
   }
 
   try {
@@ -1387,21 +1665,61 @@ export async function deleteCancellationNotice(
 // -------------------------------------------------------------
 // QARZA-E-HASANA (INTEREST-FREE LOAN) AGREEMENTS
 // -------------------------------------------------------------
+const normalizeCnicDigits = (cnic?: string) => (cnic || '').replace(/[-\s]/g, '').trim();
+
 export async function recordQarzaAgreement(
   data: Omit<QarzaHasanaAgreement, 'id' | 'createdAt'>,
   userEmail: string = 'admin'
 ): Promise<QarzaHasanaAgreement> {
+  const loanAmt = Number(data.loanAmount);
+  if (!Number.isFinite(loanAmt) || loanAmt <= 0 || loanAmt > 20000) {
+    throw new Error('قرضِ حسنہ کی رقم 1 روپے سے 20,000 روپے کے درمیان ہونی چاہیے۔');
+  }
+
+  const borrowerCnicNorm = normalizeCnicDigits(data.cnic);
+  const guarantorCnicNorm = normalizeCnicDigits(data.guarantorCnic);
+  if (borrowerCnicNorm && guarantorCnicNorm && borrowerCnicNorm === guarantorCnicNorm) {
+    throw new Error('قرض دار اور ضامن کا شناختی کارڈ نمبر ایک جیسا نہیں ہو سکتا۔');
+  }
+
+  if (data.memberId) {
+    const member = await getMemberById(data.memberId);
+    if (!member) {
+      throw new Error('منتخب کردہ ممبر ریکارڈ میں موجود نہیں ہے۔');
+    }
+    if (member.status !== 'Active' && member.status !== 'Completed') {
+      throw new Error(
+        `صرف فعال (Active) یا مکمل (Completed) ممبر کو قرضِ حسنہ جاری کیا جا سکتا ہے۔ اس ممبر کا اسٹیٹس ${member.status} ہے۔`
+      );
+    }
+
+    const activeLoansSnap = await getDocs(
+      query(collection(db, 'qarzaHasana'), where('status', '==', 'Active'))
+    );
+    const hasActiveLoan = activeLoansSnap.docs.some((d) => {
+      const a = d.data() as QarzaHasanaAgreement;
+      if (a.memberId && a.memberId === data.memberId) return true;
+      if (borrowerCnicNorm && normalizeCnicDigits(a.cnic) === borrowerCnicNorm) return true;
+      return false;
+    });
+    if (hasActiveLoan) {
+      throw new Error('اس ممبر کے نام پر پہلے سے ایک فعال (Active) قرضِ حسنہ جاری ہے، نیا قرض جاری نہیں ہو سکتا۔');
+    }
+  }
+
   const qarId = `qarz_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
 
-  const agreementRecord: QarzaHasanaAgreement = {
+  const agreementRecord = removeUndefined<QarzaHasanaAgreement>({
     ...data,
+    loanAmount: loanAmt,
     id: qarId,
     paidReturnAmount: data.paidReturnAmount || 0,
-    remainingReturnAmount: data.remainingReturnAmount !== undefined ? data.remainingReturnAmount : data.loanAmount,
+    remainingReturnAmount:
+      data.remainingReturnAmount !== undefined ? data.remainingReturnAmount : loanAmt,
     status: data.status || 'Active',
     createdAt: now,
-  };
+  });
 
   const path = `qarzaHasana/${qarId}`;
   try {
@@ -1412,7 +1730,7 @@ export async function recordQarzaAgreement(
       'ISSUE_QARZA_HASANA',
       'QarzaHasana',
       qarId,
-      `Issued Qarza-e-Hasana agreement #${data.agreementNumber} for ${data.fullName} (${data.cnic}). Loan Amount: Rs. ${data.loanAmount}, Monthly Return: Rs. ${data.monthlyReturnAmount}. Guarantor: ${data.guarantorName} (${data.guarantorCnic}).`
+      `Issued Qarza-e-Hasana agreement #${data.agreementNumber} for ${data.fullName} (${data.cnic}). Loan Amount: Rs. ${loanAmt}, Monthly Return: Rs. ${data.monthlyReturnAmount}. Guarantor: ${data.guarantorName} (${data.guarantorCnic}).`
     );
     return agreementRecord;
   } catch (error) {
@@ -1456,24 +1774,47 @@ export async function recordQarzaRepayment(
   userEmail: string = 'admin',
   notes?: string
 ): Promise<void> {
-  const path = `qarzaHasana/${agreementId}`;
-  try {
-    const docRef = doc(db, 'qarzaHasana', agreementId);
-    const snap = await getDoc(docRef);
-    if (!snap.exists()) throw new Error('Qarza-e-Hasana record not found');
-    const existing = snap.data() as QarzaHasanaAgreement;
+  const amt = Number(repaymentAmount);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    throw new Error('واپسی کی رقم صفر سے زیادہ ہونی چاہیے۔');
+  }
 
-    const newPaid = (existing.paidReturnAmount || 0) + repaymentAmount;
+  const path = `qarzaHasana/${agreementId}`;
+  const docRef = doc(db, 'qarzaHasana', agreementId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) {
+    throw new Error('قرضِ حسنہ کا ریکارڈ نہیں ملا۔');
+  }
+  const existing = snap.data() as QarzaHasanaAgreement;
+  const currentRemaining =
+    existing.remainingReturnAmount !== undefined
+      ? Math.max(0, Number(existing.remainingReturnAmount) || 0)
+      : Math.max(0, (Number(existing.loanAmount) || 0) - (Number(existing.paidReturnAmount) || 0));
+
+  if (existing.status === 'Repaid' || currentRemaining <= 0) {
+    throw new Error('یہ قرضِ حسنہ پہلے ہی مکمل طور پر ادا ہو چکا ہے۔');
+  }
+  if (amt > currentRemaining) {
+    throw new Error(
+      `واپسی کی رقم (${amt.toLocaleString()} روپے) باقی واجب الادا رقم (${currentRemaining.toLocaleString()} روپے) سے زیادہ نہیں ہو سکتی۔`
+    );
+  }
+
+  try {
+    const newPaid = (existing.paidReturnAmount || 0) + amt;
     const newRemaining = Math.max(0, existing.loanAmount - newPaid);
     const newStatus = newRemaining <= 0 ? ('Repaid' as const) : ('Active' as const);
 
-    await updateDoc(docRef, {
-      paidReturnAmount: newPaid,
-      remainingReturnAmount: newRemaining,
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-      ...(notes ? { notes: `${existing.notes ? existing.notes + ' | ' : ''}${notes}` } : {}),
-    });
+    await updateDoc(
+      docRef,
+      removeUndefined({
+        paidReturnAmount: newPaid,
+        remainingReturnAmount: newRemaining,
+        status: newStatus,
+        updatedAt: new Date().toISOString(),
+        ...(notes ? { notes: `${existing.notes ? existing.notes + ' | ' : ''}${notes}` } : {}),
+      })
+    );
 
     await logAudit(
       userEmail,
@@ -1481,7 +1822,54 @@ export async function recordQarzaRepayment(
       'REPAY_QARZA_HASANA',
       'QarzaHasana',
       agreementId,
-      `Recorded return payment of Rs. ${repaymentAmount} for Qarza-e-Hasana #${existing.agreementNumber} (${existing.fullName}). Total Returned: Rs. ${newPaid}, Remaining: Rs. ${newRemaining}. Status: ${newStatus}.`
+      `Recorded return payment of Rs. ${amt} for Qarza-e-Hasana #${existing.agreementNumber} (${existing.fullName}). Total Returned: Rs. ${newPaid}, Remaining: Rs. ${newRemaining}. Status: ${newStatus}.`
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function markQarzaAsDefaulted(
+  agreementId: string,
+  userEmail: string = 'admin',
+  reason?: string
+): Promise<void> {
+  const path = `qarzaHasana/${agreementId}`;
+  const docRef = doc(db, 'qarzaHasana', agreementId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) {
+    throw new Error('قرضِ حسنہ کا ریکارڈ نہیں ملا۔');
+  }
+  const existing = snap.data() as QarzaHasanaAgreement;
+  if (existing.status === 'Repaid') {
+    throw new Error('مکمل ادا شدہ قرض کو نادہندہ (Defaulted) قرار نہیں دیا جا سکتا۔');
+  }
+  if (existing.status === 'Defaulted') {
+    throw new Error('یہ قرضِ حسنہ پہلے ہی نادہندہ (Defaulted) قرار دیا جا چکا ہے۔');
+  }
+
+  const remaining =
+    existing.remainingReturnAmount !== undefined
+      ? Math.max(0, Number(existing.remainingReturnAmount) || 0)
+      : Math.max(0, (Number(existing.loanAmount) || 0) - (Number(existing.paidReturnAmount) || 0));
+
+  try {
+    await updateDoc(
+      docRef,
+      removeUndefined({
+        status: 'Defaulted',
+        updatedAt: new Date().toISOString(),
+        ...(reason ? { notes: `${existing.notes ? existing.notes + ' | ' : ''}Defaulted: ${reason}` } : {}),
+      })
+    );
+
+    await logAudit(
+      userEmail,
+      'SUPER ADMIN',
+      'MARK_QARZA_DEFAULTED',
+      'QarzaHasana',
+      agreementId,
+      `Marked Qarza-e-Hasana #${existing.agreementNumber} (${existing.fullName}) as Defaulted. Remaining: Rs. ${remaining}${reason ? `. Reason: ${reason}` : ''}`
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -1494,261 +1882,6 @@ export async function recordQarzaRepayment(
 export async function seedInitialDemoDataIfEmpty(): Promise<void> {
   // Disabled permanently: Real production database. Never seed demo data.
   return;
-}
-
-async function _deprecatedSeedDemoData(): Promise<void> {
-  try {
-    const membersSnap = await getDocs(collection(db, 'members'));
-    if (!membersSnap.empty) {
-      return;
-    }
-
-    // 1. Ensure settings exist
-    await setDoc(doc(db, 'settings', 'general'), DEFAULT_SETTINGS);
-
-    // 2. Member 1: Hafiz Muhammad Usman (MZ-#002, 24 Months, Rs. 120,000, 9 installments paid)
-    const mem1Id = 'mem_demo_002';
-    const mem1Schedule = generateInstallmentSchedule(
-      mem1Id,
-      'MZ-#002',
-      24,
-      5000,
-      '2024-09-05',
-      15
-    );
-
-    let mem1Paid = 0;
-    const batch1 = writeBatch(db);
-
-    // Pay first 9 installments
-    for (let i = 0; i < mem1Schedule.length; i++) {
-      const inst = mem1Schedule[i];
-      const instId = `inst_${mem1Id}_${inst.installmentNumber}`;
-      if (inst.installmentNumber <= 9) {
-        inst.paidAmount = 5000;
-        inst.remainingAmount = 0;
-        inst.status = 'Paid';
-        inst.paidDate = `202${inst.installmentNumber > 4 ? '5' : '4'}-0${((inst.installmentNumber + 8) % 12) + 1}-10`;
-        inst.paymentMethod = i % 2 === 0 ? 'Cash' : 'EasyPaisa';
-        inst.receiptNumber = `MZ-RCP-000${inst.installmentNumber}`;
-        mem1Paid += 5000;
-      } else if (inst.installmentNumber === 10) {
-        inst.status = 'Due';
-      }
-      batch1.set(doc(db, 'installments', instId), { ...inst, id: instId });
-    }
-
-    const mem1Data: Member = {
-      id: mem1Id,
-      memberNumber: 'MZ-#002',
-      fullName: 'Hafiz Muhammad Usman',
-      fatherName: 'Muhammad Rafiq',
-      cnic: '42101-7890123-1',
-      mobile: '0300-8765432',
-      whatsapp: '0300-8765432',
-      address: 'Flat 402, Al-Madina Heights, Block 2, Clifton, Karachi.',
-      joiningDate: '2024-09-05',
-      planMonths: 24,
-      monthlyInstallment: 5000,
-      totalCommitteeAmount: 120000,
-      paidAmount: mem1Paid, // 45,000
-      dueAmount: 120000 - mem1Paid, // 75,000
-      advanceAmount: 0,
-      registrationFee: 1000,
-      registrationFeeStatus: 'Paid',
-      nomineeName: 'Abdul Rehman',
-      nomineeRelation: 'Brother',
-      nomineeCnic: '42101-1234567-3',
-      nomineeMobile: '0312-3456789',
-      status: 'Active',
-      notes: 'Umrah committee group leader. Regular and punctual depositor.',
-      createdAt: '2024-09-05T10:00:00.000Z',
-      updatedAt: new Date().toISOString(),
-    };
-    batch1.set(doc(db, 'members', mem1Id), mem1Data);
-
-    // Create a sample receipt for Usman
-    const rcp1: Receipt = {
-      id: 'rcp_demo_009',
-      receiptNumber: 'MZ-RCP-0009',
-      memberId: mem1Id,
-      memberNumber: 'MZ-#002',
-      memberName: 'Hafiz Muhammad Usman',
-      fatherName: 'Muhammad Rafiq',
-      mobile: '0300-8765432',
-      address: 'Flat 402, Al-Madina Heights, Block 2, Clifton, Karachi.',
-      planMonths: 24,
-      paymentId: 'pay_demo_009',
-      installmentNumber: 9,
-      dueDate: '2025-05-15',
-      amount: 5000,
-      paymentDate: '2025-05-10',
-      paymentMethod: 'EasyPaisa',
-      previousPaidAmount: 40000,
-      currentPayment: 5000,
-      remainingBalance: 75000,
-      advanceAmount: 0,
-      totalCommitteeAmount: 120000,
-      totalPaidAmount: 45000,
-      totalDueAmount: 75000,
-      registrationFeeStatus: 'Paid',
-      notes: 'May Allah accept your Umrah intention',
-      generatedBy: 'Admin Office',
-      verificationStatus: 'Verified',
-      createdAt: '2025-05-10T12:30:00.000Z',
-    };
-    batch1.set(doc(db, 'receipts', 'rcp_demo_009'), rcp1);
-
-    const pay1: Payment = {
-      id: 'pay_demo_009',
-      memberId: mem1Id,
-      memberNumber: 'MZ-#002',
-      memberName: 'Hafiz Muhammad Usman',
-      installmentId: `inst_${mem1Id}_9`,
-      installmentNumber: 9,
-      receiptId: 'rcp_demo_009',
-      receiptNumber: 'MZ-RCP-0009',
-      amountReceived: 5000,
-      paymentMethod: 'EasyPaisa',
-      paymentDate: '2025-05-10',
-      referenceNumber: 'EP-982374102',
-      notes: 'Physical transaction verified via counter',
-      collectedBy: 'Admin Office',
-      allocationType: 'current',
-      createdAt: '2025-05-10T12:30:00.000Z',
-    };
-    batch1.set(doc(db, 'payments', 'pay_demo_009'), pay1);
-
-    await batch1.commit();
-
-    // 3. Member 2: Munawara Begaum (MZ-#003, 24 Months)
-    const mem2Id = 'mem_demo_003';
-    const mem2Schedule = generateInstallmentSchedule(
-      mem2Id,
-      'MZ-#003',
-      24,
-      5000,
-      '2024-10-15',
-      15
-    );
-    let mem2Paid = 0;
-    const batch2 = writeBatch(db);
-
-    for (let i = 0; i < mem2Schedule.length; i++) {
-      const inst = mem2Schedule[i];
-      const instId = `inst_${mem2Id}_${inst.installmentNumber}`;
-      if (inst.installmentNumber <= 7) {
-        inst.paidAmount = 5000;
-        inst.remainingAmount = 0;
-        inst.status = 'Paid';
-        inst.paidDate = `2025-0${inst.installmentNumber}-12`;
-        inst.paymentMethod = 'JazzCash';
-        inst.receiptNumber = `MZ-RCP-00${10 + inst.installmentNumber}`;
-        mem2Paid += 5000;
-      } else if (inst.installmentNumber === 8) {
-        inst.paidAmount = 3000;
-        inst.remainingAmount = 2000;
-        inst.status = 'Partial';
-        inst.paidDate = '2025-05-14';
-        inst.paymentMethod = 'Cash';
-        mem2Paid += 3000;
-      } else {
-        inst.status = 'Upcoming';
-      }
-      batch2.set(doc(db, 'installments', instId), { ...inst, id: instId });
-    }
-
-    const mem2Data: Member = {
-      id: mem2Id,
-      memberNumber: 'MZ-#003',
-      fullName: 'Munawara Begaum',
-      fatherName: 'Late Sheikh Abdul Hameed',
-      cnic: '42201-9876543-2',
-      mobile: '0321-7654321',
-      whatsapp: '0321-7654321',
-      address: 'House B-22, Gulshan-e-Iqbal, Block 7, Karachi.',
-      joiningDate: '2024-10-15',
-      planMonths: 24,
-      monthlyInstallment: 5000,
-      totalCommitteeAmount: 120000,
-      paidAmount: mem2Paid, // 38,000
-      dueAmount: 120000 - mem2Paid, // 82,000
-      advanceAmount: 0,
-      registrationFee: 1000,
-      registrationFeeStatus: 'Paid',
-      nomineeName: 'Bilal Hameed',
-      nomineeRelation: 'Son',
-      nomineeCnic: '42201-1122334-5',
-      nomineeMobile: '0333-9988776',
-      status: 'Active',
-      notes: 'Installment #8 paid partially (Rs. 3,000 paid, Rs. 2,000 remaining).',
-      createdAt: '2024-10-15T11:00:00.000Z',
-      updatedAt: new Date().toISOString(),
-    };
-    batch2.set(doc(db, 'members', mem2Id), mem2Data);
-
-    // 4. Member 3: Tariq Mehmood (MZ-#004, 36 Months, 180,000)
-    const mem3Id = 'mem_demo_004';
-    const mem3Schedule = generateInstallmentSchedule(
-      mem3Id,
-      'MZ-#004',
-      36,
-      5000,
-      '2025-01-10',
-      15
-    );
-    let mem3Paid = 0;
-    for (let i = 0; i < mem3Schedule.length; i++) {
-      const inst = mem3Schedule[i];
-      const instId = `inst_${mem3Id}_${inst.installmentNumber}`;
-      if (inst.installmentNumber <= 4) {
-        inst.paidAmount = 5000;
-        inst.remainingAmount = 0;
-        inst.status = 'Paid';
-        inst.paidDate = `2025-0${inst.installmentNumber}-15`;
-        inst.paymentMethod = 'Cash';
-        inst.receiptNumber = `MZ-RCP-00${20 + inst.installmentNumber}`;
-        mem3Paid += 5000;
-      } else {
-        inst.status = inst.installmentNumber === 5 ? 'Due' : 'Upcoming';
-      }
-      batch2.set(doc(db, 'installments', instId), { ...inst, id: instId });
-    }
-
-    const mem3Data: Member = {
-      id: mem3Id,
-      memberNumber: 'MZ-#004',
-      fullName: 'Tariq Mehmood',
-      fatherName: 'Ghulam Rasool',
-      cnic: '42301-4455667-9',
-      mobile: '0345-1239876',
-      whatsapp: '0345-1239876',
-      address: 'Shop 14, Bismillah Plaza, Tariq Road, Karachi.',
-      joiningDate: '2025-01-10',
-      planMonths: 36,
-      monthlyInstallment: 5000,
-      totalCommitteeAmount: 180000,
-      paidAmount: mem3Paid, // 20,000
-      dueAmount: 180000 - mem3Paid, // 160,000
-      advanceAmount: 0,
-      registrationFee: 1000,
-      registrationFeeStatus: 'Paid',
-      nomineeName: 'Zainab Tariq',
-      nomineeRelation: 'Daughter',
-      nomineeCnic: '42301-5566778-2',
-      nomineeMobile: '0345-9871234',
-      status: 'Active',
-      notes: '36-month Umrah committee plan.',
-      createdAt: '2025-01-10T09:00:00.000Z',
-      updatedAt: new Date().toISOString(),
-    };
-    batch2.set(doc(db, 'members', mem3Id), mem3Data);
-
-    await batch2.commit();
-    console.log('Seeding completed successfully.');
-  } catch (err) {
-    console.error('Error seeding demo data:', err);
-  }
 }
 
 // -------------------------------------------------------------
@@ -1807,8 +1940,11 @@ export interface DatabaseBackupPayload {
     payments: any[];
     receipts: any[];
     refunds: any[];
+    cancellations: any[];
+    qarzaHasana: any[];
     auditLogs: any[];
     settings: any[];
+    counters: any | null;
   };
 }
 
@@ -1834,8 +1970,11 @@ export async function createFullDatabaseBackup(userEmail: string = 'admin'): Pro
     paymentsCount: number;
     receiptsCount: number;
     refundsCount: number;
+    cancellationsCount: number;
+    qarzaHasanaCount: number;
     auditLogsCount: number;
     settingsCount: number;
+    hasCounters: boolean;
   };
 }> {
   const collectionNames = [
@@ -1844,6 +1983,8 @@ export async function createFullDatabaseBackup(userEmail: string = 'admin'): Pro
     'payments',
     'receipts',
     'refunds',
+    'cancellations',
+    'qarzaHasana',
     'auditLogs',
     'settings',
   ] as const;
@@ -1854,6 +1995,8 @@ export async function createFullDatabaseBackup(userEmail: string = 'admin'): Pro
     payments: [],
     receipts: [],
     refunds: [],
+    cancellations: [],
+    qarzaHasana: [],
     auditLogs: [],
     settings: [],
   };
@@ -1876,9 +2019,22 @@ export async function createFullDatabaseBackup(userEmail: string = 'admin'): Pro
     }
   }
 
+  let countersDoc: any | null = null;
+  try {
+    const counterSnap = await getDoc(COUNTERS_DOC_REF());
+    if (counterSnap.exists()) {
+      countersDoc = { id: counterSnap.id, ...counterSnap.data() };
+      if (!results.settings.some((s) => s.id === 'counters')) {
+        results.settings.push(countersDoc);
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read settings/counters for backup:', err);
+  }
+
   const now = new Date();
   const exportedAt = now.toISOString();
-  const dateStr = exportedAt.split('T')[0];
+  const dateStr = getTodayKarachiDate();
   const filename = `mz-backup-${dateStr}.json`;
 
   const backupData: DatabaseBackupPayload = {
@@ -1889,8 +2045,11 @@ export async function createFullDatabaseBackup(userEmail: string = 'admin'): Pro
       payments: results.payments,
       receipts: results.receipts,
       refunds: results.refunds,
+      cancellations: results.cancellations,
+      qarzaHasana: results.qarzaHasana,
       auditLogs: results.auditLogs,
       settings: results.settings,
+      counters: countersDoc,
     },
   };
 
@@ -1902,7 +2061,7 @@ export async function createFullDatabaseBackup(userEmail: string = 'admin'): Pro
       'BACKUP_DOWNLOADED',
       'Database',
       'all_collections',
-      `Full system backup exported (${results.members.length} members, ${results.installments.length} installments, ${results.payments.length} payments, ${results.receipts.length} receipts, ${results.refunds.length} refunds, ${results.auditLogs.length} audit logs)`
+      `Full system backup exported (${results.members.length} members, ${results.installments.length} installments, ${results.payments.length} payments, ${results.receipts.length} receipts, ${results.refunds.length} refunds, ${results.cancellations.length} cancellations, ${results.qarzaHasana.length} qarza agreements, ${results.auditLogs.length} audit logs, ${results.settings.length} settings${countersDoc ? ' incl. counters' : ''})`
     );
   } catch (auditErr) {
     console.warn('Could not record BACKUP_DOWNLOADED audit log:', auditErr);
@@ -1917,8 +2076,11 @@ export async function createFullDatabaseBackup(userEmail: string = 'admin'): Pro
       paymentsCount: results.payments.length,
       receiptsCount: results.receipts.length,
       refundsCount: results.refunds.length,
+      cancellationsCount: results.cancellations.length,
+      qarzaHasanaCount: results.qarzaHasana.length,
       auditLogsCount: results.auditLogs.length,
       settingsCount: results.settings.length,
+      hasCounters: countersDoc !== null,
     },
   };
 }
@@ -2015,7 +2177,7 @@ export function previewRescheduleInstallments(
         totalInstallmentsToUpdate++;
       }
 
-      const isPaid = (inst.paidAmount || 0) >= inst.amount || (inst.remainingAmount !== undefined && inst.remainingAmount <= 0) || inst.status === 'Paid';
+      const isPaid = computeInstallmentStatus(inst, todayStr) === 'Paid';
       if (isPaid || (inst.paidAmount || 0) > 0) {
         paidInstallmentNumbers.push(inst.installmentNumber);
       }
@@ -2023,7 +2185,7 @@ export function previewRescheduleInstallments(
       if (newStatus === 'Paid') {
         memberPaidCount++;
         totalPaidCount++;
-      } else if (newStatus === 'Overdue') {
+      } else if (newStatus === 'Overdue' || newStatus === 'Partial - Overdue' || newStatus === 'Late') {
         memberOverdueCount++;
         totalOverdueCount++;
       } else {
@@ -2105,33 +2267,42 @@ export async function rescheduleAllMemberInstallments(
   let totalInstallmentsCommitted = 0;
   let membersCommitted = 0;
 
+  const ops: BatchOp[] = [];
+  const syncNow = new Date().toISOString();
+
   for (const memberPreview of preview.previews) {
     const changedDiffs = memberPreview.diffs.filter((d) => d.isDateChanged || d.isStatusChanged);
     if (changedDiffs.length === 0) continue;
 
-    // Use separate writeBatch per member (max 36 docs per member, well below 500 limit)
-    const batch = writeBatch(db);
-
     for (const diff of changedDiffs) {
       const instRef = doc(db, 'installments', diff.installmentId);
       // Strictly update ONLY dueDate and status. NEVER touch paidAmount, remainingAmount, receipts, etc.
-      batch.update(instRef, {
-        dueDate: diff.newDueDate,
-        status: diff.newStatus,
+      ops.push({
+        type: 'update',
+        ref: instRef,
+        data: {
+          dueDate: diff.newDueDate,
+          status: diff.newStatus,
+        },
       });
       totalInstallmentsCommitted++;
     }
 
     // Also update member's firstInstallmentDueDate
     const memberRef = doc(db, 'members', memberPreview.memberId);
-    batch.update(memberRef, {
-      firstInstallmentDueDate: targetFirstDueDate,
-      updatedAt: new Date().toISOString(),
+    ops.push({
+      type: 'update',
+      ref: memberRef,
+      data: {
+        firstInstallmentDueDate: targetFirstDueDate,
+        updatedAt: syncNow,
+      },
     });
 
-    await batch.commit();
     membersCommitted++;
   }
+
+  await commitInChunks(ops, 400);
 
   // Record audit log
   try {
@@ -2182,17 +2353,23 @@ export async function rescheduleSingleMemberInstallments(
   const batch = writeBatch(db);
   for (const diff of changedDiffs) {
     const instRef = doc(db, 'installments', diff.installmentId);
-    batch.update(instRef, {
-      dueDate: diff.newDueDate,
-      status: diff.newStatus,
-    });
+    batch.update(
+      instRef,
+      removeUndefined({
+        dueDate: diff.newDueDate,
+        status: diff.newStatus,
+      })
+    );
   }
 
   const memberRef = doc(db, 'members', memberId);
-  batch.update(memberRef, {
-    firstInstallmentDueDate: targetFirstDueDate,
-    updatedAt: new Date().toISOString(),
-  });
+  batch.update(
+    memberRef,
+    removeUndefined({
+      firstInstallmentDueDate: targetFirstDueDate,
+      updatedAt: new Date().toISOString(),
+    })
+  );
 
   await batch.commit();
 

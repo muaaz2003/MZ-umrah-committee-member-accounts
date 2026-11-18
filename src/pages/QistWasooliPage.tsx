@@ -11,7 +11,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { Payment, Receipt, PaymentMethod } from '../types';
-import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import { formatPKR, formatDateDisplay, getTodayKarachiDate, addDaysToDateStr } from '../utils/calculations';
 
 interface QistWasooliPageProps {
   payments: Payment[];
@@ -30,9 +30,8 @@ export const QistWasooliPage: React.FC<QistWasooliPageProps> = ({
   const [methodFilter, setMethodFilter] = useState<'all' | PaymentMethod>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const todayStr = getTodayKarachiDate();
+  const yesterday = addDaysToDateStr(todayStr, -1);
 
   const filtered = payments.filter((p) => {
     // Payment method filter

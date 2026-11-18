@@ -13,9 +13,9 @@ import { Installment, Member } from '../types';
 import {
   formatPKR,
   formatDateDisplay,
-  isInstallmentOverdue,
   computeInstallmentStatus,
   getTodayKarachiDate,
+  getDaysLate,
 } from '../utils/calculations';
 
 interface DueInstallmentsPageProps {
@@ -37,17 +37,26 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const todayStr = getTodayKarachiDate();
-  const now = new Date().getTime();
+  const activeMemberIds = new Set(
+    members.filter((m) => m.status === 'Active').map((m) => m.id)
+  );
 
-  // Filter installments that are not paid dynamically
+  // Filter installments that are not paid dynamically (Active members only)
   const dueList = installments.filter((i) => {
+    if (!activeMemberIds.has(i.memberId)) return false;
     const liveStatus = computeInstallmentStatus(i, todayStr);
     if (liveStatus === 'Paid') return false;
-    if (onlyOverdue && liveStatus !== 'Overdue' && liveStatus !== 'Late') return false;
+    if (
+      onlyOverdue &&
+      liveStatus !== 'Overdue' &&
+      liveStatus !== 'Late' &&
+      liveStatus !== 'Partial - Overdue'
+    ) {
+      return false;
+    }
 
-    // Days calculation
-    const dueTime = new Date(i.dueDate).getTime();
-    const diffDays = Math.floor((now - dueTime) / (1000 * 60 * 60 * 24));
+    // Days calculation strictly via Asia/Karachi getDaysLate helper
+    const diffDays = getDaysLate(i.dueDate);
 
     if (filterBucket === 'today') {
       if (i.dueDate !== todayStr) return false;
@@ -179,8 +188,7 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
             ) : (
               dueList.map((inst) => {
                 const member = members.find((m) => m.id === inst.memberId);
-                const dueTime = new Date(inst.dueDate).getTime();
-                const daysLate = Math.max(0, Math.floor((now - dueTime) / (1000 * 60 * 60 * 24)));
+                const daysLate = getDaysLate(inst.dueDate);
                 const isLate = daysLate > 0;
 
                 return (
@@ -244,7 +252,9 @@ export const DueInstallmentsPage: React.FC<DueInstallmentsPageProps> = ({
                         return (
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              liveStatus === 'Overdue'
+                              liveStatus === 'Overdue' ||
+                              liveStatus === 'Late' ||
+                              liveStatus === 'Partial - Overdue'
                                 ? 'bg-rose-100 text-rose-800 border border-rose-300'
                                 : liveStatus === 'Partial'
                                 ? 'bg-amber-100 text-amber-900 border border-amber-300'

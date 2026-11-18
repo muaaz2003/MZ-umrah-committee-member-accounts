@@ -16,7 +16,12 @@ import {
   Edit2,
 } from 'lucide-react';
 import { Member, Installment, PaymentMethod, Receipt } from '../types';
-import { formatPKR, calculateInstallmentDueDate } from '../utils/calculations';
+import {
+  formatPKR,
+  calculateInstallmentDueDate,
+  computeInstallmentStatus,
+  getTodayKarachiDate,
+} from '../utils/calculations';
 import { recordPayment, recordManualPayment, deleteReceiptAndRevertPayment } from '../services/firebaseService';
 import mzaLogo from '../assets/images/mza-logo.png';
 
@@ -60,7 +65,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
 
   // Payment details
   const [amountReceived, setAmountReceived] = useState<number | string>(5000);
-  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState<string>(getTodayKarachiDate());
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [referenceNumber, setReferenceNumber] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -102,7 +107,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
         }
 
         setAmountReceived(editingReceipt.amount || 5000);
-        setPaymentDate(editingReceipt.paymentDate || new Date().toISOString().split('T')[0]);
+        setPaymentDate(editingReceipt.paymentDate || getTodayKarachiDate());
         setPaymentMethod(editingReceipt.paymentMethod || 'Cash');
         setReferenceNumber(editingReceipt.referenceNumber || editingReceipt.transactionRef || '');
         setNotes(editingReceipt.notes || '');
@@ -122,7 +127,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
         setManualMobile(initialMember.mobile || '');
         const monthly = initialMember.monthlyInstallment || 5000;
         setAmountReceived(monthly);
-        setPaymentDate(new Date().toISOString().split('T')[0]);
+        setPaymentDate(getTodayKarachiDate());
         setPaymentMethod('Cash');
         setReferenceNumber('');
         setNotes('');
@@ -132,7 +137,7 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
         setManualFather('');
         setManualMobile('');
         setAmountReceived(5000);
-        setPaymentDate(new Date().toISOString().split('T')[0]);
+        setPaymentDate(getTodayKarachiDate());
         setPaymentMethod('Cash');
         setReferenceNumber('');
         setNotes('');
@@ -198,9 +203,10 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
   useEffect(() => {
     if (editingReceipt) return;
     if (activeInstallments.length > 0) {
+      const todayStr = getTodayKarachiDate();
       const isUnpaid = (i: Installment) => {
         const rem = i.remainingAmount !== undefined ? i.remainingAmount : (i.amount - (i.paidAmount || 0));
-        return rem > 0 && i.status !== 'Paid';
+        return rem > 0 && computeInstallmentStatus(i, todayStr) !== 'Paid';
       };
       const firstUnpaid = activeInstallments.find(isUnpaid) || activeInstallments[0];
       if (firstUnpaid) {
@@ -608,7 +614,8 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
                         (editingReceipt.installmentsCovered && editingReceipt.installmentsCovered.includes(inst.installmentNumber))
                       );
                       const rem = inst.remainingAmount !== undefined ? inst.remainingAmount : (inst.amount - (inst.paidAmount || 0));
-                      const statusLabel = isCoveredByEditing ? 'Being Edited' : inst.status;
+                      const liveStatus = computeInstallmentStatus(inst, getTodayKarachiDate());
+                      const statusLabel = isCoveredByEditing ? 'Being Edited' : liveStatus;
                       const dueLabel = isCoveredByEditing ? formatPKR(editingReceipt.amount || inst.amount) : formatPKR(rem || inst.amount);
                       return (
                         <option key={inst.id} value={inst.id}>
@@ -702,9 +709,10 @@ export const QistWasoolModal: React.FC<QistWasoolModalProps> = ({
           {/* Multi-Installment Allocation Live Preview */}
           {(() => {
             if (!selectedMember || numAmount <= requiredAmount) return null;
+            const todayStr = getTodayKarachiDate();
             const unpaid = activeInstallments.filter((i) => {
               const rem = i.remainingAmount !== undefined ? i.remainingAmount : (i.amount - (i.paidAmount || 0));
-              return rem > 0 && i.status !== 'Paid';
+              return rem > 0 && computeInstallmentStatus(i, todayStr) !== 'Paid';
             });
             const coveredList: { num: number; amt: number }[] = [];
             let tempAmt = numAmount;

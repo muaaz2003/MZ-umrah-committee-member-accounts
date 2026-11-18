@@ -1,6 +1,6 @@
 export type MemberStatus = 'Active' | 'Completed' | 'Cancelled' | 'Refunded' | 'Archived';
 export type CommitteePlan = '24 Months' | '36 Months';
-export type InstallmentStatus = 'Upcoming' | 'Due' | 'Paid' | 'Partial' | 'Advance' | 'Late' | 'Overdue';
+export type InstallmentStatus = 'Upcoming' | 'Due' | 'Paid' | 'Partial' | 'Partial - Overdue' | 'Advance' | 'Late' | 'Overdue';
 export type PaymentMethod = 'Cash' | 'EasyPaisa' | 'JazzCash' | 'Other';
 export type UserRole = 'SUPER ADMIN' | 'ADMIN' | 'STAFF' | 'MEMBER';
 
@@ -231,6 +231,8 @@ export interface FinancialSummary {
   bankCollected: number;
   advanceCollected: number;
   refundsPaid: number;
+  qarzaOutstanding?: number;
+  cashInHand?: number;
 }
 
 export interface CommitteeSettings {

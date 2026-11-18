@@ -9,6 +9,7 @@ import {
   Eye,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   FileText,
   UserCheck,
   X,
@@ -19,7 +20,16 @@ import {
 import { QarzaHasanaAgreement, Member } from '../types';
 import { formatPKR } from '../utils/calculations';
 import { QarzaModal } from '../components/QarzaModal';
-import { deleteQarzaAgreement, recordQarzaRepayment } from '../services/firebaseService';
+import {
+  deleteQarzaAgreement,
+  recordQarzaRepayment,
+  markQarzaAsDefaulted,
+} from '../services/firebaseService';
+
+const getRemainingAmount = (a: QarzaHasanaAgreement): number =>
+  a.remainingReturnAmount !== undefined
+    ? Math.max(0, Number(a.remainingReturnAmount) || 0)
+    : Math.max(0, (Number(a.loanAmount) || 0) - (Number(a.paidReturnAmount) || 0));
 
 interface QarzaHasanaPageProps {
   agreements: QarzaHasanaAgreement[];
@@ -35,16 +45,19 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
   onRefresh,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Repaid'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Repaid' | 'Defaulted'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAgreementForView, setSelectedAgreementForView] = useState<QarzaHasanaAgreement | null>(null);
   const [selectedMemberForLoan, setSelectedMemberForLoan] = useState<Member | null>(null);
 
   // In-App Confirmations & Actions
   const [agreementToDelete, setAgreementToDelete] = useState<{ id: string; num: string } | null>(null);
+  const [agreementToDefault, setAgreementToDefault] = useState<QarzaHasanaAgreement | null>(null);
+  const [defaultReason, setDefaultReason] = useState<string>('');
   const [agreementForRepayment, setAgreementForRepayment] = useState<QarzaHasanaAgreement | null>(null);
   const [repaymentAmountInput, setRepaymentAmountInput] = useState<number>(10000);
   const [repaymentNotes, setRepaymentNotes] = useState<string>('');
+  const [repaymentError, setRepaymentError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -55,6 +68,7 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
   const totalOutstandingBalance = Math.max(0, totalDisbursedAmount - totalRepaidAmount);
   const activeCount = agreements.filter((a) => a.status === 'Active').length;
   const repaidCount = agreements.filter((a) => a.status === 'Repaid').length;
+  const defaultedCount = agreements.filter((a) => a.status === 'Defaulted').length;
 
   const filteredAgreements = agreements.filter((a) => {
     if (statusFilter !== 'all' && a.status !== statusFilter) return false;
@@ -110,35 +124,72 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
   // Record Installment Return (e.g. Rs. 10,000)
   const handleExecuteRepayment = async () => {
     if (!agreementForRepayment) return;
-    if (repaymentAmountInput <= 0) {
-      setNotification({ type: 'error', text: 'برائے مہربانی درست واپسی رقم درج کریں۔' });
+    const remaining = getRemainingAmount(agreementForRepayment);
+    const amt = Number(repaymentAmountInput);
+
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setRepaymentError('برائے مہربانی صفر سے زیادہ درست واپسی رقم درج کریں۔');
+      return;
+    }
+    if (amt > remaining) {
+      setRepaymentError(
+        `واپسی رقم باقی واجب الادا رقم (${formatPKR(remaining)}) سے زیادہ نہیں ہو سکتی۔`
+      );
       return;
     }
 
     try {
       setIsProcessing(true);
+      setRepaymentError(null);
       await recordQarzaRepayment(
         agreementForRepayment.id,
-        repaymentAmountInput,
+        amt,
         currentUserEmail,
         repaymentNotes.trim() || undefined
       );
       setIsProcessing(false);
       setNotification({
         type: 'success',
-        text: `قرض واپسی رقم ${formatPKR(repaymentAmountInput)} کامیابی سے وصول اور ریکارڈ کر لی گئی۔`,
+        text: `قرض واپسی رقم ${formatPKR(amt)} کامیابی سے وصول اور ریکارڈ کر لی گئی۔`,
       });
       setAgreementForRepayment(null);
       setRepaymentAmountInput(10000);
       setRepaymentNotes('');
+      setRepaymentError(null);
       if (onRefresh) onRefresh();
     } catch (err: any) {
       console.error('Record repayment error:', err);
       setIsProcessing(false);
-      setAgreementForRepayment(null);
+      setRepaymentError(err?.message || 'واپسی رقم ریکارڈ کرنے میں خرابی پیش آئی۔');
+    }
+  };
+
+  // Mark Loan as Defaulted
+  const handleExecuteMarkDefaulted = async () => {
+    if (!agreementToDefault) return;
+    try {
+      setIsProcessing(true);
+      await markQarzaAsDefaulted(
+        agreementToDefault.id,
+        currentUserEmail,
+        defaultReason.trim() || undefined
+      );
+      setIsProcessing(false);
+      setNotification({
+        type: 'success',
+        text: `قرضِ حسنہ #${agreementToDefault.agreementNumber} کو نادہندہ (Defaulted) قرار دے کر آڈٹ لاگ میں محفوظ کر لیا گیا۔`,
+      });
+      setAgreementToDefault(null);
+      setDefaultReason('');
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      console.error('Mark defaulted error:', err);
+      setIsProcessing(false);
+      setAgreementToDefault(null);
+      setDefaultReason('');
       setNotification({
         type: 'error',
-        text: err?.message || 'واپسی رقم ریکارڈ کرنے میں خرابی پیش آئی۔',
+        text: err?.message || 'اسٹیٹس اپڈیٹ کرنے میں خرابی پیش آئی۔',
       });
     }
   };
@@ -291,6 +342,14 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
             >
               مکمل ادا شدہ ({repaidCount})
             </button>
+            <button
+              onClick={() => setStatusFilter('Defaulted')}
+              className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                statusFilter === 'Defaulted' ? 'bg-white text-rose-800 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              نادہندہ ({defaultedCount})
+            </button>
           </div>
         </div>
       </div>
@@ -392,6 +451,10 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-block">
                             مکمل ادا شدہ (Repaid)
                           </span>
+                        ) : item.status === 'Defaulted' ? (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 inline-block">
+                            نادہندہ (Defaulted)
+                          </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 inline-block">
                             زیرِ ادائیگی (Active)
@@ -399,19 +462,38 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
                         )}
                       </td>
                       <td className="py-3.5 px-5 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
                           {/* Record Repayment Button */}
                           {!isFullyRepaid && (
                             <button
                               onClick={() => {
+                                const rem = getRemainingAmount(item);
+                                const monthly = Number(item.monthlyReturnAmount) || 10000;
                                 setAgreementForRepayment(item);
-                                setRepaymentAmountInput(10000);
+                                setRepaymentAmountInput(Math.min(monthly, rem));
+                                setRepaymentNotes('');
+                                setRepaymentError(null);
                               }}
                               className="px-2.5 py-1 text-emerald-900 hover:text-white bg-emerald-100 hover:bg-emerald-800 border border-emerald-300 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs"
                               title="قرض کی واپسی رقم درج کریں (Record Return Payment)"
                             >
                               <CreditCard className="w-3.5 h-3.5" />
                               <span>واپسی وصول</span>
+                            </button>
+                          )}
+
+                          {/* Mark as Defaulted Button */}
+                          {!isFullyRepaid && item.status !== 'Defaulted' && (
+                            <button
+                              onClick={() => {
+                                setAgreementToDefault(item);
+                                setDefaultReason('');
+                              }}
+                              className="px-2 py-1 text-rose-800 hover:text-white bg-rose-50 hover:bg-rose-700 border border-rose-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                              title="نادہندہ قرار دیں (Mark as Defaulted)"
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Mark as Defaulted</span>
                             </button>
                           )}
 
@@ -444,108 +526,209 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
       )}
 
       {/* IN-APP REPAYMENT RECORDING MODAL */}
-      {agreementForRepayment && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-md w-full p-6 text-right space-y-4 border border-slate-200 animate-in fade-in zoom-in-95 duration-200" dir="rtl">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-                  <CreditCard className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-slate-900">
-                    قرضِ حسنہ واپسی قسط وصولی
-                  </h3>
-                  <div className="text-[11px] font-mono text-emerald-800">
-                    Ref: {agreementForRepayment.agreementNumber}
+      {agreementForRepayment && (() => {
+        const remaining = getRemainingAmount(agreementForRepayment);
+        const monthly = Number(agreementForRepayment.monthlyReturnAmount) || 10000;
+        const suggestedFull = Math.min(monthly, remaining);
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-md w-full p-6 text-right space-y-4 border border-slate-200 animate-in fade-in zoom-in-95 duration-200" dir="rtl">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                    <CreditCard className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      قرضِ حسنہ واپسی قسط وصولی
+                    </h3>
+                    <div className="text-[11px] font-mono text-emerald-800">
+                      Ref: {agreementForRepayment.agreementNumber}
+                    </div>
                   </div>
                 </div>
+                <button
+                  onClick={() => {
+                    setAgreementForRepayment(null);
+                    setRepaymentError(null);
+                  }}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                onClick={() => setAgreementForRepayment(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-urdu">قرض دار ممبر:</span>
-                <span className="font-bold text-slate-900 font-urdu">{agreementForRepayment.fullName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-urdu">کل قرض رقم:</span>
-                <span className="font-bold text-slate-900">{formatPKR(agreementForRepayment.loanAmount || 20000)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-urdu">سابقہ ادا شدہ واپسی:</span>
-                <span className="font-bold text-emerald-800">{formatPKR(agreementForRepayment.paidReturnAmount || 0)}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-200 pt-1.5">
-                <span className="text-amber-800 font-bold font-urdu">باقی واجب الادا رقم:</span>
-                <span className="font-black text-amber-900">
-                  {formatPKR(agreementForRepayment.remainingReturnAmount !== undefined ? agreementForRepayment.remainingReturnAmount : Math.max(0, (agreementForRepayment.loanAmount || 20000) - (agreementForRepayment.paidReturnAmount || 0)))}
-                </span>
-              </div>
-            </div>
+              {repaymentError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{repaymentError}</span>
+                </div>
+              )}
 
-            <div className="space-y-1.5 text-xs">
-              <label className="font-bold text-slate-800 font-urdu block">
-                واپسی رقم درج کریں (روپے):
-              </label>
-              <input
-                type="number"
-                value={repaymentAmountInput}
-                onChange={(e) => setRepaymentAmountInput(Number(e.target.value) || 0)}
-                className="w-full px-3 py-2 border-2 border-emerald-500 rounded-xl font-mono text-base font-black text-emerald-950 focus:outline-hidden"
-              />
-              <div className="flex items-center gap-2 pt-1">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-urdu">قرض دار ممبر:</span>
+                  <span className="font-bold text-slate-900 font-urdu">{agreementForRepayment.fullName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-urdu">کل قرض رقم:</span>
+                  <span className="font-bold text-slate-900">{formatPKR(agreementForRepayment.loanAmount || 20000)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-urdu">سابقہ ادا شدہ واپسی:</span>
+                  <span className="font-bold text-emerald-800">{formatPKR(agreementForRepayment.paidReturnAmount || 0)}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200 pt-1.5">
+                  <span className="text-amber-800 font-bold font-urdu">باقی واجب الادا رقم:</span>
+                  <span className="font-black text-amber-900">
+                    {formatPKR(remaining)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 text-xs">
+                <label className="font-bold text-slate-800 font-urdu block">
+                  واپسی رقم درج کریں (زیادہ سے زیادہ باقی: {formatPKR(remaining)}):
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={remaining}
+                  value={repaymentAmountInput}
+                  onChange={(e) => {
+                    setRepaymentAmountInput(Number(e.target.value) || 0);
+                    if (repaymentError) setRepaymentError(null);
+                  }}
+                  className="w-full px-3 py-2 border-2 border-emerald-500 rounded-xl font-mono text-base font-black text-emerald-950 focus:outline-hidden"
+                />
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {remaining >= 5000 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRepaymentAmountInput(5000);
+                        setRepaymentError(null);
+                      }}
+                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-md cursor-pointer"
+                    >
+                      Rs. 5,000
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRepaymentAmountInput(suggestedFull);
+                      setRepaymentError(null);
+                    }}
+                    className="px-2 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 text-[10px] font-bold rounded-md cursor-pointer"
+                  >
+                    {formatPKR(suggestedFull)} ({suggestedFull === remaining ? 'پوری باقی رقم' : 'ماہانہ قسط'})
+                  </button>
+                  {remaining > suggestedFull && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRepaymentAmountInput(remaining);
+                        setRepaymentError(null);
+                      }}
+                      className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-bold rounded-md cursor-pointer"
+                    >
+                      پوری باقی رقم ({formatPKR(remaining)})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 text-xs">
+                <label className="font-bold text-slate-700 font-urdu block">
+                  تفصیل / نوٹ (اختیاری):
+                </label>
+                <input
+                  type="text"
+                  value={repaymentNotes}
+                  onChange={(e) => setRepaymentNotes(e.target.value)}
+                  placeholder="مثلاً: قسط نمبر 1 بذریعہ کیش وصول..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-urdu"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setRepaymentAmountInput(5000)}
-                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-md"
+                  onClick={handleExecuteRepayment}
+                  disabled={isProcessing}
+                  className="flex-1 py-2.5 bg-[#064E3B] hover:bg-emerald-850 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
-                  Rs. 5,000
+                  {isProcessing ? 'ریکارڈ ہو رہا ہے...' : 'واپسی رقم محفوظ کریں'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setRepaymentAmountInput(10000)}
-                  className="px-2 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 text-[10px] font-bold rounded-md"
+                  onClick={() => {
+                    setAgreementForRepayment(null);
+                    setRepaymentError(null);
+                  }}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                 >
-                  Rs. 10,000 (پوری ماہانہ قسط)
+                  کینسل
                 </button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* IN-APP MARK AS DEFAULTED MODAL */}
+      {agreementToDefault && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-md w-full p-6 text-right space-y-4 border border-slate-200 animate-in fade-in zoom-in-95 duration-200" dir="rtl">
+            <div className="w-12 h-12 bg-rose-100 text-rose-700 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1 text-center">
+              <h3 className="text-base font-black text-slate-900 font-urdu">
+                قرضِ حسنہ کو نادہندہ (Defaulted) قرار دیں؟
+              </h3>
+              <p className="text-xs text-slate-600 font-mono">
+                {agreementToDefault.agreementNumber} • {agreementToDefault.fullName}
+              </p>
+              <p className="text-[11px] text-rose-700 font-bold pt-1 font-urdu">
+                باقی واجب الادا رقم: {formatPKR(getRemainingAmount(agreementToDefault))}
+              </p>
             </div>
 
             <div className="space-y-1.5 text-xs">
               <label className="font-bold text-slate-700 font-urdu block">
-                تفصیل / نوٹ (اختیاری):
+                وجہ / نوٹ (اختیاری):
               </label>
               <input
                 type="text"
-                value={repaymentNotes}
-                onChange={(e) => setRepaymentNotes(e.target.value)}
-                placeholder="مثلاً: قسط نمبر 1 بذریعہ کیش وصول..."
+                value={defaultReason}
+                onChange={(e) => setDefaultReason(e.target.value)}
+                placeholder="مثلاً: مقررہ مدت میں واپسی نہ کرنے پر..."
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-urdu"
               />
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={handleExecuteRepayment}
-                disabled={isProcessing}
-                className="flex-1 py-2.5 bg-[#064E3B] hover:bg-emerald-850 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                onClick={() => {
+                  setAgreementToDefault(null);
+                  setDefaultReason('');
+                }}
+                className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-bold transition-colors cursor-pointer"
               >
-                {isProcessing ? 'ریکارڈ ہو رہا ہے...' : 'واپسی رقم محفوظ کریں'}
+                کینسل (Cancel)
               </button>
               <button
                 type="button"
-                onClick={() => setAgreementForRepayment(null)}
-                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                onClick={handleExecuteMarkDefaulted}
+                disabled={isProcessing}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
               >
-                کینسل
+                {isProcessing ? 'اپڈیٹ ہو رہا ہے...' : 'ہاں، نادہندہ قرار دیں'}
               </button>
             </div>
           </div>
@@ -602,6 +785,7 @@ export const QarzaHasanaPage: React.FC<QarzaHasanaPageProps> = ({
           setSelectedMemberForLoan(null);
         }}
         members={members}
+        existingAgreements={agreements}
         initialAgreement={selectedAgreementForView}
         targetMember={selectedMemberForLoan}
         currentUserEmail={currentUserEmail}

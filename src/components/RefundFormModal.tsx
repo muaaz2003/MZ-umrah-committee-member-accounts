@@ -22,7 +22,9 @@ import { Member, Refund } from '../types';
 import { recordRefund } from '../services/firebaseService';
 import mzaLogo from '../assets/images/mza-logo.png';
 import {
+  formatDateDisplay,
   formatPKR,
+  getTodayKarachiDate,
   numberToWordsEnglish,
   numberToWordsUrdu,
 } from '../utils/calculations';
@@ -134,6 +136,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   const [activeSignTarget, setActiveSignTarget] = useState<'admin' | 'member' | null>(null);
 
   // Status & Loaders
+  const [earlyExitConfirmed, setEarlyExitConfirmed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -154,21 +157,20 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
       document.body.style.touchAction = 'none';
 
       // Automatically generate Voucher # and Date as soon as the refund page/modal opens
-      const now = new Date();
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const formattedDate = `${String(now.getDate()).padStart(2, '0')}-${months[now.getMonth()]}-${now.getFullYear()}`;
+      const formattedDate = formatDateDisplay(getTodayKarachiDate());
       const autoVoucher = `MZA-REF-${Date.now().toString().slice(-4)}`;
 
       setVoucherNumber((prev) => (prev ? prev : autoVoucher));
       setRefundDate((prev) => (prev ? prev : formattedDate));
       setIssueDate((prev) => (prev ? prev : formattedDate));
+      setEarlyExitConfirmed(false);
 
       return () => {
         document.body.style.overflow = originalOverflow;
         document.body.style.touchAction = originalTouchAction;
       };
     }
-  }, [isOpen]);
+  }, [isOpen, member?.id]);
 
   if (!isOpen) return null;
 
@@ -215,8 +217,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
 
   // Quick fill from member details for admin convenience
   const handleAutofillFromMember = () => {
-    const now = new Date();
-    const formattedDate = `${String(now.getDate()).padStart(2, '0')}-${now.toLocaleString('default', { month: 'short' })}-${now.getFullYear()}`;
+    const formattedDate = formatDateDisplay(getTodayKarachiDate());
     const autoVoucher = `MZA-REF-${Date.now().toString().slice(-4)}`;
 
     setVoucherNumber(autoVoucher);
@@ -280,6 +281,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
     setIssueDate('');
     setAdminSignature('');
     setMemberSignature('');
+    setEarlyExitConfirmed(false);
   };
 
   // Canvas Drawing Handlers
@@ -666,16 +668,33 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
   };
 
   // Save Record into Firestore
-  const handleSaveRecord = async () => {
+  const handleSaveRecord = async (): Promise<boolean> => {
     if (!member && !memberName) {
       setStatusMessage({ type: 'error', text: 'Baraye mehrbani Member Name ya Member darj karein.' });
-      return;
+      return false;
     }
 
-    const numAmt = Number(totalCollectedAmount) || Number(totalRefundFigure) || (member ? member.paidAmount : 0);
-    if (numAmt <= 0) {
-      setStatusMessage({ type: 'error', text: 'Baraye mehrbani Refund Amount darj karein.' });
-      return;
+    const rawAmount = totalCollectedAmount || totalRefundFigure || (member ? String(member.paidAmount || 0) : '');
+    const numAmt = Number(String(rawAmount).replace(/,/g, '').trim());
+    if (!Number.isFinite(numAmt) || numAmt <= 0) {
+      setStatusMessage({ type: 'error', text: 'Baraye mehrbani sahi Refund Amount (> 0) darj karein.' });
+      return false;
+    }
+
+    if (member && numAmt > (member.paidAmount || 0)) {
+      setStatusMessage({
+        type: 'error',
+        text: `Refund amount (${formatPKR(numAmt)}) member ki jama shuda raqam (${formatPKR(member.paidAmount || 0)}) se zyada nahi ho sakta.`,
+      });
+      return false;
+    }
+
+    if (member && member.status === 'Active' && !earlyExitConfirmed) {
+      setStatusMessage({
+        type: 'error',
+        text: 'Active member ka refund save karne ke liye neeche diya gaya Early-Exit Confirmation checkbox lazmi tick karein.',
+      });
+      return false;
     }
 
     try {
@@ -700,7 +719,7 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
         refundAmountInWordsUrdu: amountInWordsUrdu || '',
         installmentsDescription: qistDescription || '',
         memberFeedback: memberFeedback || '',
-        refundDate: refundDate || new Date().toISOString().split('T')[0],
+        refundDate: refundDate || getTodayKarachiDate(),
         reason: refundReason || `Refund Voucher #${voucher} - ${qistDescription || 'Official Refund'}`,
         approvedBy: currentUserEmail || 'Admin',
         adminSignature: adminSignature.length > 50 ? 'Signed Digitally' : adminSignature,
@@ -713,16 +732,19 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
       if (onRefundSuccess) {
         onRefundSuccess(createdRefund);
       }
+      return true;
     } catch (err: any) {
       console.error('Error saving refund record:', err);
       setStatusMessage({ type: 'error', text: err?.message || 'Record save karne me masla pesh aya.' });
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSaveAndDownload = async () => {
-    await handleSaveRecord();
+    const saved = await handleSaveRecord();
+    if (!saved) return;
     await handleDownloadPDF();
   };
 
@@ -1384,6 +1406,26 @@ export const RefundFormModal: React.FC<RefundFormModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Early-Exit Confirmation for Active Members */}
+        {member && member.status === 'Active' && (
+          <div className="w-full bg-amber-50 border-t border-amber-300 px-3 sm:px-5 py-2.5 flex items-center justify-between gap-3 shrink-0" dir="rtl">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none text-xs font-bold text-amber-950">
+              <input
+                type="checkbox"
+                checked={earlyExitConfirmed}
+                onChange={(e) => setEarlyExitConfirmed(e.target.checked)}
+                className="w-4 h-4 text-rose-600 border-amber-400 rounded focus:ring-rose-500 cursor-pointer shrink-0"
+              />
+              <span>
+                قبل از وقت اخراج کی تصدیق: یہ ممبر اس وقت <strong className="text-emerald-800">Active</strong> ہے (جمع شدہ رقم: {formatPKR(member.paidAmount)})۔ ریفنڈ محفوظ کرنے سے ممبرشپ مستقل طور پر <strong>Refunded</strong> ہو جائے گی۔{' '}
+                <bdi dir="ltr" className="font-sans text-[11px] font-semibold text-amber-900">
+                  (Early-exit confirmation required for Active member)
+                </bdi>
+              </span>
+            </label>
+          </div>
+        )}
 
         {/* Modal Bottom Action Footer */}
         <div className="w-full bg-slate-50 p-3 sm:p-4 border-t border-slate-200 flex flex-wrap items-center justify-end gap-2.5 sm:gap-3 shrink-0 shadow-xs">

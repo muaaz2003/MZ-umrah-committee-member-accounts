@@ -226,7 +226,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       const { backupData, filename, stats } = await createFullDatabaseBackup(userEmail);
       downloadJsonFile(backupData, filename);
 
-      const successText = `پورا بیک اپ کامیابی سے ڈاؤن لوڈ ہو گیا! فائل: ${filename} (مجموعی ممبران: ${stats.membersCount}، اقساط: ${stats.installmentsCount}، ادائیگیاں: ${stats.paymentsCount}، رسیدیں: ${stats.receiptsCount}، ریفنڈز: ${stats.refundsCount}، آڈٹ لاگز: ${stats.auditLogsCount})`;
+      const successText = `پورا بیک اپ کامیابی سے ڈاؤن لوڈ ہو گیا! فائل: ${filename} (مجموعی ممبران: ${stats.membersCount}، اقساط: ${stats.installmentsCount}، ادائیگیاں: ${stats.paymentsCount}، رسیدیں: ${stats.receiptsCount}، ریفنڈز: ${stats.refundsCount}، کینسلیشنز: ${stats.cancellationsCount}، قرضِ حسنہ: ${stats.qarzaHasanaCount}، کاؤنٹرز: ${stats.hasCounters ? 'شامل' : 'نہیں'}، آڈٹ لاگز: ${stats.auditLogsCount})`;
       setBackupSuccessMessage(successText);
 
       if (onBackupCompleted) {
@@ -744,8 +744,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                                             className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                                               d.newStatus === 'Paid'
                                                 ? 'bg-emerald-100 text-emerald-900'
-                                                : d.newStatus === 'Overdue'
+                                                : d.newStatus === 'Overdue' || d.newStatus === 'Partial - Overdue'
                                                 ? 'bg-rose-100 text-rose-800'
+                                                : d.newStatus === 'Partial'
+                                                ? 'bg-amber-100 text-amber-900'
                                                 : 'bg-yellow-100 text-yellow-800'
                                             }`}
                                           >

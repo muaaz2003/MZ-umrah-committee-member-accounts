@@ -14,7 +14,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Member, Payment, FinancialSummary, Installment } from '../types';
-import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import { formatPKR, formatDateDisplay, getTodayKarachiDate } from '../utils/calculations';
 import { createFullDatabaseBackup, downloadJsonFile } from '../services/firebaseService';
 
 interface ReportsPageProps {
@@ -98,7 +98,7 @@ export const ReportsPage: React.FC<ReportsPageProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `MZA_Umrah_${selectedReport}_report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `MZA_Umrah_${selectedReport}_report_${getTodayKarachiDate()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

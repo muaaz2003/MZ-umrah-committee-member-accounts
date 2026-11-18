@@ -20,7 +20,7 @@ import {
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import { Member, MemberStatus, CommitteeSettings } from '../types';
-import { getNextMembershipNumber, createMember, updateMember } from '../services/firebaseService';
+import { peekNextMembershipNumber, createMember, updateMember } from '../services/firebaseService';
 import { DEFAULT_MONTHLY_INSTALLMENT, PLAN_A_TOTAL, PLAN_B_TOTAL, formatPKR } from '../utils/calculations';
 import mzaLogo from '../assets/images/mza-logo.png';
 
@@ -47,7 +47,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 }) => {
   const defaultJoining = settings?.committeeStartDate || '2026-10-01';
   const defaultFirstDue = settings?.firstInstallmentDueDate || '2026-10-10';
-  const fixedRegistrationFee = Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 1000);
+  const fixedRegistrationFee = Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 0);
 
   const [memberNumber, setMemberNumber] = useState('MZA-#001');
   const [fullName, setFullName] = useState('');
@@ -61,6 +61,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
   const [planMonths, setPlanMonths] = useState<24 | 36>(24);
   const [monthlyInstallment, setMonthlyInstallment] = useState<number | string>(5000);
   const [registrationFee, setRegistrationFee] = useState<number>(fixedRegistrationFee);
+  const [registrationFeeReceived, setRegistrationFeeReceived] = useState<boolean>(false);
   const [nomineeName, setNomineeName] = useState('');
   const [nomineeRelation, setNomineeRelation] = useState('');
   const [nomineeCnic, setNomineeCnic] = useState('');
@@ -196,7 +197,12 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         setFirstInstallmentDueDate(memberToEdit.firstInstallmentDueDate || defaultFirstDue);
         setPlanMonths(memberToEdit.planMonths === 36 ? 36 : 24);
         setMonthlyInstallment(memberToEdit.monthlyInstallment || 5000);
-        setRegistrationFee(fixedRegistrationFee);
+        setRegistrationFee(
+          memberToEdit.registrationFeeStatus === 'Paid'
+            ? (Number(memberToEdit.registrationFee) || 0)
+            : fixedRegistrationFee
+        );
+        setRegistrationFeeReceived(memberToEdit.registrationFeeStatus === 'Paid');
         setNomineeName(memberToEdit.nomineeName || '');
         setNomineeRelation(memberToEdit.nomineeRelation || '');
         setNomineeCnic(memberToEdit.nomineeCnic || '');
@@ -208,7 +214,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         setGuarantorAgreement(true);
         setErrorMessage('');
       } else {
-        // New member mode - reset form
+        // New member mode - reset form (registrationFeeStatus defaults to Unpaid)
         setFullName('');
         setFatherName('');
         setCnic('');
@@ -220,6 +226,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
         setPlanMonths(24);
         setMonthlyInstallment(5000);
         setRegistrationFee(fixedRegistrationFee);
+        setRegistrationFeeReceived(false);
         setNomineeName('');
         setNomineeRelation('');
         setNomineeCnic('');
@@ -241,9 +248,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             }
           }
           setMemberNumber(`MZA-#${String(maxNumber).padStart(3, '0')}`);
-        } else {
-          getNextMembershipNumber().then((num) => setMemberNumber(num));
         }
+        peekNextMembershipNumber().then((num) => setMemberNumber(num));
       }
     }
   }, [isOpen, memberToEdit, existingMembers, fixedRegistrationFee]);
@@ -270,33 +276,92 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
 
   const quickAmounts = [5000, 8000, 10000];
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMessage('تصویر کا سائز 5MB سے کم ہونا چاہیے۔ (Photo size must be under 5MB)');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setMemberPhoto(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+  const resizeAndValidatePhoto = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('image/')) {
+        reject(new Error('براہ کرم صرف درست تصویر کی فائل (JPG, PNG, WebP) منتخب کریں۔'));
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onerror = () => {
+        reject(new Error('تصویر پڑھنے میں خرابی پیش آئی۔ براہ کرم دوبارہ کوشش کریں۔'));
+      };
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => {
+          reject(new Error('تصویر لوڈ نہیں ہو سکی۔ براہ کرم دوسری تصویر منتخب کریں۔'));
+        };
+        img.onload = () => {
+          const MAX_DIM = 400;
+          let targetW = img.naturalWidth || img.width;
+          let targetH = img.naturalHeight || img.height;
+
+          if (targetW > MAX_DIM || targetH > MAX_DIM) {
+            const ratio = Math.min(MAX_DIM / targetW, MAX_DIM / targetH);
+            targetW = Math.max(1, Math.round(targetW * ratio));
+            targetH = Math.max(1, Math.round(targetH * ratio));
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('تصویر پروسیس کرنے میں خرابی پیش آئی۔'));
+            return;
+          }
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, targetW, targetH);
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          const base64Part = dataUrl.split(',')[1] || '';
+          const approxBytes = Math.ceil((base64Part.length * 3) / 4);
+
+          if (approxBytes > 300 * 1024) {
+            reject(
+              new Error(
+                'کمپریشن کے بعد بھی تصویر کا سائز 300KB سے زیادہ ہے۔ براہ کرم چھوٹی تصویر منتخب کریں۔'
+              )
+            );
+            return;
+          }
+
+          resolve(dataUrl);
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErrorMessage('');
+    try {
+      const compressed = await resizeAndValidatePhoto(file);
+      setMemberPhoto(compressed);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'تصویر کا سائز 300KB سے کم ہونا چاہیے۔');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMessage('تصویر کا سائز 5MB سے کم ہونا چاہیے۔ (Photo size must be under 5MB)');
-      return;
+    setErrorMessage('');
+    try {
+      const compressed = await resizeAndValidatePhoto(file);
+      setMemberPhoto(compressed);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'تصویر کا سائز 300KB سے کم ہونا چاہیے۔');
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setMemberPhoto(reader.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -333,8 +398,10 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
       setIsSubmitting(true);
       if (memberToEdit) {
         // UPDATE EXISTING MEMBER
-        const updatedTotal = planMonths * finalMonthly;
-        const updatedDue = Math.max(0, updatedTotal - (memberToEdit.paidAmount || 0));
+        const effectiveRegFee =
+          memberToEdit.registrationFeeStatus === 'Paid'
+            ? (Number(memberToEdit.registrationFee) || 0)
+            : fixedRegistrationFee;
         const updatedData: Partial<Member> = {
           fullName: fullName.trim(),
           fatherName: fatherName.trim(),
@@ -346,9 +413,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           firstInstallmentDueDate,
           planMonths,
           monthlyInstallment: finalMonthly,
-          totalCommitteeAmount: updatedTotal,
-          dueAmount: updatedDue,
-          registrationFee: fixedRegistrationFee,
+          registrationFee: effectiveRegFee,
+          registrationFeeStatus: registrationFeeReceived ? 'Paid' : 'Unpaid',
           nomineeName: nomineeName.trim(),
           nomineeRelation: nomineeRelation.trim(),
           nomineeCnic: nomineeCnic.trim(),
@@ -358,8 +424,8 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
           memberPhoto: memberPhoto || undefined,
         };
 
-        await updateMember(memberToEdit.id, updatedData, currentUserEmail);
-        const updatedFullMember: Member = {
+        const savedMember = await updateMember(memberToEdit.id, updatedData, currentUserEmail);
+        const updatedFullMember: Member = savedMember || {
           ...memberToEdit,
           ...updatedData,
           updatedAt: new Date().toISOString(),
@@ -387,7 +453,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
             monthlyInstallment: finalMonthly,
             totalCommitteeAmount: planMonths * finalMonthly,
             registrationFee: fixedRegistrationFee,
-            registrationFeeStatus: (fixedRegistrationFee > 0 ? 'Paid' : 'Unpaid'),
+            registrationFeeStatus: registrationFeeReceived ? 'Paid' : 'Unpaid',
             nomineeName: nomineeName.trim(),
             nomineeRelation: nomineeRelation.trim(),
             nomineeCnic: nomineeCnic.trim(),
@@ -553,7 +619,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                         ممبر کی تصویر اپلوڈ کرنے کے لیے کلک کریں
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        فائل کو ڈریگ اینڈ ڈراپ بھی کر سکتے ہیں (JPG, PNG - زیادہ سے زیادہ 5MB)
+                        فائل کو ڈریگ اینڈ ڈراپ بھی کر سکتے ہیں (JPG, PNG - خودکار 400×400 ری سائز، زیادہ سے زیادہ 300KB)
                       </p>
                     </div>
                   )}
@@ -696,6 +762,20 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                   (5,000 تا 10,000 کے درمیان)
                 </span>
               </div>
+
+              {memberToEdit && (memberToEdit.paidAmount || 0) > 0 && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-2 text-right" dir="rtl">
+                  <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold">
+                      انتباہ: اس ممبر کی اقساط میں ادائیگی ({formatPKR(memberToEdit.paidAmount)}) ریکارڈ ہو چکی ہے۔
+                    </p>
+                    <p className="text-[11px] text-amber-800">
+                      جن اقساط کی رقم جزوی یا مکمل ادا ہو چکی ہے (paidAmount &gt; 0)، ان کی رقم تبدیل نہیں ہوگی۔ اگر قسط #24 کے بعد کسی قسط میں ادائیگی ہو چکی ہو تو 36 سے 24 ماہ پلان میں تبدیلی کی اجازت نہیں ہوگی۔
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Real-time Dynamic Calculation Banner Boxes */}
@@ -789,12 +869,20 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({
                     </span>
                   </div>
                   <span className="font-mono font-black text-emerald-950 text-sm sm:text-base tracking-wide" dir="ltr">
-                    Rs. {fixedRegistrationFee.toLocaleString()}
+                    Rs. {registrationFee.toLocaleString()}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-1 text-right font-medium" dir="rtl">
-                  یہ فیس کمیٹی سیٹنگز میں مقررہ فکسڈ رقم کے مطابق ہے۔
-                </p>
+                <label className="mt-2 flex items-center justify-end gap-2 cursor-pointer select-none" dir="rtl">
+                  <input
+                    type="checkbox"
+                    checked={registrationFeeReceived}
+                    onChange={(e) => setRegistrationFeeReceived(e.target.checked)}
+                    className="w-4 h-4 text-emerald-700 border-slate-300 rounded focus:ring-emerald-600 cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-slate-800">
+                    فیس وصول ہوگئی <bdi dir="ltr" className="font-sans text-[11px] text-slate-500 font-semibold">(Fee received)</bdi>
+                  </span>
+                </label>
               </div>
             </div>
           </div>

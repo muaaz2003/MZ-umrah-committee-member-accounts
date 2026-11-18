@@ -24,19 +24,20 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
   onRefresh,
   onToggleFeeStatus,
 }) => {
-  const fixedFee = Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 1000);
+  const fixedFee = Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 0);
   const [filter, setFilter] = useState<'all' | 'Paid' | 'Unpaid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const totalMembers = members.length;
-  const paidCount = members.filter((m) => m.registrationFeeStatus === 'Paid').length;
+  const nonCancelledMembers = members.filter((m) => m.status !== 'Cancelled');
+  const totalMembers = nonCancelledMembers.length;
+  const paidCount = nonCancelledMembers.filter((m) => m.registrationFeeStatus === 'Paid').length;
   const unpaidCount = totalMembers - paidCount;
-  const totalCollected = members
+  const totalCollected = nonCancelledMembers
     .filter((m) => m.registrationFeeStatus === 'Paid')
-    .reduce((sum, m) => sum + (m.registrationFee || fixedFee), 0);
+    .reduce((sum, m) => sum + (Number(m.registrationFee) || 0), 0);
 
-  const filtered = members.filter((m) => {
+  const filtered = nonCancelledMembers.filter((m) => {
     if (filter !== 'all' && m.registrationFeeStatus !== filter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -182,7 +183,7 @@ export const RegistrationFeesPage: React.FC<RegistrationFeesPageProps> = ({
                   {m.planMonths} Months
                 </td>
                 <td className="py-3 px-4 text-right font-bold text-slate-900">
-                  Rs. {m.registrationFee || fixedFee}
+                  Rs. {(m.registrationFeeStatus === 'Paid' ? (Number(m.registrationFee) || 0) : (m.registrationFee ?? fixedFee)).toLocaleString()}
                 </td>
                 <td className="py-3 px-4 text-center">
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${

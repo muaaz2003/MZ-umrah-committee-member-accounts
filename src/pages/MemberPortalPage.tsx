@@ -13,7 +13,12 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Member, Installment, Receipt } from '../types';
-import { formatPKR, formatDateDisplay } from '../utils/calculations';
+import {
+  formatPKR,
+  formatDateDisplay,
+  computeInstallmentStatus,
+  getTodayKarachiDate,
+} from '../utils/calculations';
 import { getMemberInstallments, getMemberReceipts } from '../services/firebaseService';
 
 interface MemberPortalPageProps {
@@ -185,52 +190,79 @@ export const MemberPortalPage: React.FC<MemberPortalPageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {installments.map((inst) => {
-                    const receipt = receipts.find((r) => r.installmentNumber === inst.installmentNumber);
-                    return (
-                      <tr key={inst.id} className={inst.status === 'Paid' ? 'bg-emerald-50/20' : ''}>
-                        <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
-                          Qist #{inst.installmentNumber}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-slate-700">
-                          {formatDateDisplay(inst.dueDate)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-800">
-                          {formatPKR(inst.amount)}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600">
-                          {inst.paidDate ? formatDateDisplay(inst.paidDate) : '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-black text-emerald-800">
-                          {inst.paidAmount > 0 ? formatPKR(inst.paidAmount) : '—'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            inst.status === 'Paid'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : inst.status === 'Partial'
-                              ? 'bg-amber-100 text-amber-900'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {inst.status}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          {receipt ? (
-                            <button
-                              onClick={() => onOpenReceipt(receipt)}
-                              className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-bold inline-flex items-center gap-1 shadow-xs"
+                  {(() => {
+                    const todayStr = getTodayKarachiDate();
+                    return installments.map((inst) => {
+                      const liveStatus = computeInstallmentStatus(inst, todayStr);
+                      const receipt = receipts.find(
+                        (r) =>
+                          r.installmentNumber === inst.installmentNumber ||
+                          (r.installmentsCovered && r.installmentsCovered.includes(inst.installmentNumber))
+                      );
+                      return (
+                        <tr
+                          key={inst.id}
+                          className={
+                            liveStatus === 'Paid'
+                              ? 'bg-emerald-50/20'
+                              : liveStatus === 'Overdue' ||
+                                liveStatus === 'Late' ||
+                                liveStatus === 'Partial - Overdue'
+                              ? 'bg-rose-50/20'
+                              : ''
+                          }
+                        >
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
+                            Qist #{inst.installmentNumber}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-slate-700">
+                            {formatDateDisplay(inst.dueDate)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-800">
+                            {formatPKR(inst.amount)}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-600">
+                            {inst.paidDate ? formatDateDisplay(inst.paidDate) : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-black text-emerald-800">
+                            {inst.paidAmount > 0 ? formatPKR(inst.paidAmount) : '—'}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                liveStatus === 'Paid'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : liveStatus === 'Overdue' ||
+                                    liveStatus === 'Late' ||
+                                    liveStatus === 'Partial - Overdue'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : liveStatus === 'Partial'
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : liveStatus === 'Due'
+                                  ? 'bg-yellow-100 text-yellow-900'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}
                             >
-                              <ReceiptIcon className="w-3 h-3" />
-                              <span>View Receipt</span>
-                            </button>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                              {liveStatus}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {receipt ? (
+                              <button
+                                onClick={() => onOpenReceipt(receipt)}
+                                className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-bold inline-flex items-center gap-1 shadow-xs"
+                              >
+                                <ReceiptIcon className="w-3 h-3" />
+                                <span>View Receipt</span>
+                              </button>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>

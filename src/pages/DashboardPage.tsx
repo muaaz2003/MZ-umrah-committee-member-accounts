@@ -27,7 +27,15 @@ import {
   Coins,
 } from 'lucide-react';
 import { Member, Payment, Receipt, FinancialSummary, Installment, Refund, CommitteeSettings } from '../types';
-import { formatPKR, formatDateDisplay, getDaysLate, computeInstallmentStatus, getTodayKarachiDate } from '../utils/calculations';
+import {
+  formatPKR,
+  formatDateDisplay,
+  getDaysLate,
+  computeInstallmentStatus,
+  getTodayKarachiDate,
+  addDaysToDateStr,
+  parseDateParts,
+} from '../utils/calculations';
 import { MemberCard } from '../components/MemberCard';
 
 interface DashboardPageProps {
@@ -72,26 +80,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [methodFilter, setMethodFilter] = useState<'ALL' | 'Cash' | 'EasyPaisa' | 'JazzCash' | 'Other'>('ALL');
   const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
 
-  // Today and Month dates for calculations
-  const todayDateStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  // Today and Month dates for calculations (strictly Asia/Karachi)
+  const todayDateStr = useMemo(() => getTodayKarachiDate(), []);
   const currentMonthStr = useMemo(() => todayDateStr.substring(0, 7), [todayDateStr]);
 
   // Filtered Payments based on Time Filter
   const filteredPayments = useMemo(() => {
     if (timeFilter === 'all') return payments;
 
-    const now = new Date();
     if (timeFilter === 'month') {
       return payments.filter((p) => p.paymentDate && p.paymentDate.startsWith(currentMonthStr));
     }
     if (timeFilter === 'week') {
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(now.getDate() - 7);
-      const weekAgoStr = oneWeekAgo.toISOString().split('T')[0];
+      const weekAgoStr = addDaysToDateStr(todayDateStr, -7);
       return payments.filter((p) => p.paymentDate && p.paymentDate >= weekAgoStr);
     }
     return payments;
-  }, [payments, timeFilter, currentMonthStr]);
+  }, [payments, timeFilter, currentMonthStr, todayDateStr]);
 
   // Filtered Collection Amount for current time frame
   const periodCollectionTotal = useMemo(() => {
@@ -101,13 +106,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     );
   }, [filteredPayments]);
 
-  // Overdue Installments
+  // Overdue Installments (Active members only)
   const overdueInstallments = useMemo(() => {
-    const todayStr = getTodayKarachiDate();
+    const memberById = new Map(members.map((m) => [m.id, m]));
     return installments
-      .filter((i) => computeInstallmentStatus(i, todayStr) === 'Overdue')
+      .filter((i) => {
+        const member = memberById.get(i.memberId);
+        if (member?.status !== 'Active') return false;
+        const liveStatus = computeInstallmentStatus(i, todayDateStr);
+        return (
+          liveStatus === 'Overdue' ||
+          liveStatus === 'Late' ||
+          liveStatus === 'Partial - Overdue'
+        );
+      })
       .map((inst) => {
-        const member = members.find((m) => m.id === inst.memberId);
+        const member = memberById.get(inst.memberId);
         const daysLate = getDaysLate(inst.dueDate);
         return {
           ...inst,
@@ -116,7 +130,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         };
       })
       .sort((a, b) => b.daysLate - a.daysLate);
-  }, [installments, members]);
+  }, [installments, members, todayDateStr]);
 
   const totalOverdueAmount = useMemo(() => {
     return overdueInstallments.reduce((sum, i) => sum + (i.remainingAmount || i.amount || 0), 0);
@@ -163,12 +177,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     const monthMap: { [key: string]: number } = {};
     const monthsToShow: string[] = [];
 
-    const d = new Date();
+    const { year: baseYear, month: baseMonth } = parseDateParts(todayDateStr);
     for (let i = 5; i >= 0; i--) {
-      const past = new Date(d.getFullYear(), d.getMonth() - i, 1);
-      const key = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}`;
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const displayLabel = `${monthNames[past.getMonth()]} ${past.getFullYear().toString().slice(-2)}`;
+      const past = new Date(Date.UTC(baseYear, baseMonth - 1 - i, 1));
+      const key = `${past.getUTCFullYear()}-${String(past.getUTCMonth() + 1).padStart(2, '0')}`;
       monthMap[key] = 0;
       monthsToShow.push(key);
     }
@@ -192,7 +204,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         formatted: formatPKR(monthMap[key] || 0),
       };
     });
-  }, [payments]);
+  }, [payments, todayDateStr]);
 
   const maxMonthlyAmount = useMemo(() => {
     const maxVal = Math.max(...monthlyChartData.map((d) => d.amount), 0);
@@ -404,7 +416,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       </div>
 
       {/* Secondary Performance Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
           <div className="text-[11px] font-medium text-gray-500">This Month Inflow</div>
           <div className="text-lg font-bold text-gray-900 mt-0.5">
@@ -427,13 +439,29 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             {formatPKR(summary.registrationFeesCollected)}
           </div>
           <div className="text-[10px] text-gray-400 mt-0.5">
-            Rs. {Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 1000).toLocaleString()} non-refundable
+            Rs. {Number(settings?.registrationFee ?? settings?.defaultRegistrationFee ?? 0).toLocaleString()} non-refundable
           </div>
         </div>
 
         <button
+          onClick={() => onNavigate('qarza-hasana')}
+          className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-left hover:border-emerald-400 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center justify-between text-[11px] font-medium text-emerald-800">
+            <span>Cash in Hand</span>
+            <Wallet className="w-3.5 h-3.5 text-emerald-700" />
+          </div>
+          <div className="text-lg font-bold text-emerald-900 mt-0.5">
+            {formatPKR(summary.cashInHand ?? (summary.totalPaidAmount - summary.totalRefundsAmount - (summary.qarzaOutstanding || 0)))}
+          </div>
+          <div className="text-[10px] text-amber-700 font-semibold mt-0.5">
+            Qarza Outstanding: {formatPKR(summary.qarzaOutstanding || 0)}
+          </div>
+        </button>
+
+        <button
           onClick={() => setActiveTab('overdue')}
-          className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-left hover:border-rose-400 transition-colors cursor-pointer"
+          className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-left hover:border-rose-400 transition-colors cursor-pointer col-span-2 sm:col-span-1"
         >
           <div className="flex items-center justify-between text-[11px] font-medium text-rose-700">
             <span>Overdue Installments</span>

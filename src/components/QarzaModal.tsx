@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   Printer,
@@ -8,19 +8,24 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   HandCoins,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas-pro';
 import { Member, QarzaHasanaAgreement } from '../types';
 import { recordQarzaAgreement } from '../services/firebaseService';
+import { getTodayKarachiDate, numberToWordsUrdu } from '../utils/calculations';
 import mzaLogo from '../assets/images/mza-logo.png';
 import mzaStamp from '../assets/images/mza-stamp.png';
+
+const normalizeCnicDigits = (cnic?: string) => (cnic || '').replace(/[-\s]/g, '').trim();
 
 interface QarzaModalProps {
   isOpen: boolean;
   onClose: () => void;
   members: Member[];
+  existingAgreements?: QarzaHasanaAgreement[];
   onSuccess?: (agreement: QarzaHasanaAgreement) => void;
   currentUserEmail?: string;
   initialAgreement?: QarzaHasanaAgreement | null;
@@ -31,6 +36,7 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
   isOpen,
   onClose,
   members,
+  existingAgreements = [],
   onSuccess,
   currentUserEmail = 'admin',
   initialAgreement,
@@ -40,7 +46,7 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
 
   // Form State
   const [agreementNumber, setAgreementNumber] = useState('');
-  const [agreementDate, setAgreementDate] = useState(new Date().toISOString().split('T')[0]);
+  const [agreementDate, setAgreementDate] = useState(getTodayKarachiDate());
   const [selectedMemberId, setSelectedMemberId] = useState('');
 
   // Borrower / Member Details
@@ -77,7 +83,7 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
 
   // Reset or Populate
   const resetFields = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayKarachiDate();
     const randSuffix = Math.floor(100 + Math.random() * 900);
     setAgreementNumber(`MZA-QARZ-${randSuffix}`);
     setAgreementDate(today);
@@ -108,7 +114,7 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
     if (isOpen) {
       if (initialAgreement) {
         setAgreementNumber(initialAgreement.agreementNumber || '');
-        setAgreementDate(initialAgreement.agreementDate || new Date().toISOString().split('T')[0]);
+        setAgreementDate(initialAgreement.agreementDate || getTodayKarachiDate());
         setSelectedMemberId(initialAgreement.memberId || '');
         setSalutation(initialAgreement.salutation || 'محترم جناب');
         setFullName(initialAgreement.fullName || '');
@@ -176,6 +182,17 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
     }
   };
 
+  const guarantorActiveLoans = useMemo(() => {
+    const gCnic = normalizeCnicDigits(guarantorCnic);
+    if (!gCnic) return [];
+    return existingAgreements.filter(
+      (a) =>
+        a.status === 'Active' &&
+        a.id !== initialAgreement?.id &&
+        normalizeCnicDigits(a.guarantorCnic) === gCnic
+    );
+  }, [existingAgreements, guarantorCnic, initialAgreement?.id]);
+
   // Save to Firestore
   const handleSaveAgreement = async () => {
     if (!fullName.trim()) {
@@ -187,14 +204,62 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
       return;
     }
 
+    const numericLoanAmount = Number(loanAmount);
+    if (!Number.isFinite(numericLoanAmount) || numericLoanAmount <= 0 || numericLoanAmount > 20000) {
+      setStatusMessage({
+        type: 'error',
+        text: 'قرضِ حسنہ کی رقم 1 روپے سے 20,000 روپے کے درمیان ہونی چاہیے۔',
+      });
+      return;
+    }
+
+    const borrowerCnicNorm = normalizeCnicDigits(cnic);
+    const guarantorCnicNorm = normalizeCnicDigits(guarantorCnic);
+    if (borrowerCnicNorm && guarantorCnicNorm && borrowerCnicNorm === guarantorCnicNorm) {
+      setStatusMessage({
+        type: 'error',
+        text: 'قرض دار اور ضامن کا شناختی کارڈ نمبر ایک جیسا نہیں ہو سکتا۔',
+      });
+      return;
+    }
+
+    if (!initialAgreement && selectedMemberId) {
+      const selectedMem = members.find((m) => m.id === selectedMemberId);
+      if (selectedMem && selectedMem.status !== 'Active' && selectedMem.status !== 'Completed') {
+        setStatusMessage({
+          type: 'error',
+          text: `صرف فعال (Active) یا مکمل (Completed) ممبر کو قرضِ حسنہ جاری کیا جا سکتا ہے۔ اس ممبر کا اسٹیٹس ${selectedMem.status} ہے۔`,
+        });
+        return;
+      }
+
+      const memberHasActiveLoan = existingAgreements.some(
+        (a) =>
+          a.status === 'Active' &&
+          (a.memberId === selectedMemberId ||
+            (borrowerCnicNorm && normalizeCnicDigits(a.cnic) === borrowerCnicNorm))
+      );
+      if (memberHasActiveLoan) {
+        setStatusMessage({
+          type: 'error',
+          text: 'اس ممبر کے نام پر پہلے سے ایک فعال (Active) قرضِ حسنہ جاری ہے، نیا قرض جاری نہیں ہو سکتا۔',
+        });
+        return;
+      }
+    }
+
     try {
       setIsSubmitting(true);
       setStatusMessage(null);
 
+      const selectedMemberObj = selectedMemberId
+        ? members.find((m) => m.id === selectedMemberId)
+        : undefined;
+
       const agreementData = {
         agreementNumber: agreementNumber.trim() || `MZA-QARZ-${Date.now().toString().slice(-4)}`,
-        memberId: selectedMemberId || undefined,
-        memberNumber: members.find((m) => m.id === selectedMemberId)?.memberNumber,
+        ...(selectedMemberId ? { memberId: selectedMemberId } : {}),
+        ...(selectedMemberObj?.memberNumber ? { memberNumber: selectedMemberObj.memberNumber } : {}),
         salutation,
         fullName: fullName.trim(),
         relationType,
@@ -202,14 +267,16 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
         cnic: cnic.trim(),
         mobile: mobile.trim(),
         address: address.trim(),
-        agreementDate: agreementDate || new Date().toISOString().split('T')[0],
-        loanAmount,
+        agreementDate: agreementDate || getTodayKarachiDate(),
+        loanAmount: numericLoanAmount,
         loanAmountWordsUrdu: loanAmountWords.trim(),
-        monthlyReturnAmount,
+        monthlyReturnAmount: Number(monthlyReturnAmount) || 0,
         monthlyReturnAmountWordsUrdu: monthlyReturnAmountWords.trim(),
         repaymentDurationMonths,
         paidReturnAmount: initialAgreement?.paidReturnAmount || 0,
-        remainingReturnAmount: initialAgreement ? initialAgreement.remainingReturnAmount : loanAmount,
+        remainingReturnAmount: initialAgreement
+          ? initialAgreement.remainingReturnAmount
+          : numericLoanAmount,
         status: (initialAgreement?.status || 'Active') as 'Active' | 'Repaid' | 'Defaulted',
         guarantorName: guarantorName.trim(),
         guarantorRelationType,
@@ -561,6 +628,21 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
           </div>
         )}
 
+        {/* Non-blocking Warning Banner if Guarantor already guarantees another Active loan */}
+        {guarantorActiveLoans.length > 0 && (
+          <div
+            className="px-4 sm:px-5 py-2 text-xs font-semibold flex items-center gap-2 shrink-0 bg-amber-50 text-amber-900 border-b border-amber-200"
+            dir="rtl"
+          >
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              تنبیہ: یہ ضامن پہلے سے ایک اور فعال قرضِ حسنہ (
+              {guarantorActiveLoans.map((l) => `${l.agreementNumber} - ${l.fullName}`).join('، ')}
+              ) کی ضمانت دے رہا ہے۔
+            </span>
+          </div>
+        )}
+
         {/* Form Quick Fill Panel (Pinned Bar) */}
         <div className="bg-white border-b border-slate-200 px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs flex-1">
@@ -724,16 +806,29 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
               <span>آپ کی درخواست اور سابقہ ریکارڈ کی منظوری کے بعد عمرہ کمیٹی آپ کو اپنے طے شدہ ضابطہ و اصول کے مطابق </span>
               <strong className="text-emerald-950 font-black">
                 <input
-                  type="text"
-                  inputMode="numeric"
+                  type="number"
+                  min={1}
+                  max={20000}
                   value={loanAmount}
                   onChange={(e) => {
-                    const val = Number(e.target.value) || 0;
+                    const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value) || 0);
                     setLoanAmount(val);
+                    const words = val > 0 ? numberToWordsUrdu(val) : '';
+                    setLoanAmountWords(words ? `${words} روپے` : '');
+                    if (val > 0 && monthlyReturnAmount > 0) {
+                      setRepaymentDurationMonths(Math.max(1, Math.ceil(val / monthlyReturnAmount)));
+                    }
                   }}
-                  className="qarza-inline-field w-24 border-b-2 border-emerald-600 font-mono font-black text-emerald-950 text-center bg-emerald-50/60 rounded-xs focus:outline-hidden"
+                  className="qarza-inline-field w-24 border-b-2 border-emerald-600 font-mono font-black text-emerald-950 text-center bg-emerald-50/60 rounded-xs focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-                <span> روپے ({loanAmountWords}) </span>
+                <span> روپے (</span>
+                <input
+                  type="text"
+                  value={loanAmountWords}
+                  onChange={(e) => setLoanAmountWords(e.target.value)}
+                  className="qarza-inline-field w-40 sm:w-44 border-b border-emerald-500/70 font-urdu font-bold text-emerald-950 text-center bg-emerald-50/40 rounded-xs focus:outline-hidden"
+                />
+                <span>) </span>
               </strong>
               <span>بطور قرضِ حسنہ فراہم کر رہی ہے۔</span>
             </div>
@@ -743,16 +838,29 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
               <span>آپ اس بات کے پابند ہوں گے کہ ہر ماہ </span>
               <strong className="text-emerald-950 font-black">
                 <input
-                  type="text"
-                  inputMode="numeric"
+                  type="number"
+                  min={1}
+                  max={20000}
                   value={monthlyReturnAmount}
                   onChange={(e) => {
-                    const val = Number(e.target.value) || 0;
+                    const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value) || 0);
                     setMonthlyReturnAmount(val);
+                    const words = val > 0 ? numberToWordsUrdu(val) : '';
+                    setMonthlyReturnAmountWords(words ? `${words} روپے` : '');
+                    if (loanAmount > 0 && val > 0) {
+                      setRepaymentDurationMonths(Math.max(1, Math.ceil(loanAmount / val)));
+                    }
                   }}
-                  className="qarza-inline-field w-24 border-b-2 border-emerald-600 font-mono font-black text-emerald-950 text-center bg-emerald-50/60 rounded-xs focus:outline-hidden"
+                  className="qarza-inline-field w-24 border-b-2 border-emerald-600 font-mono font-black text-emerald-950 text-center bg-emerald-50/60 rounded-xs focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-                <span> روپے ({monthlyReturnAmountWords}) </span>
+                <span> روپے (</span>
+                <input
+                  type="text"
+                  value={monthlyReturnAmountWords}
+                  onChange={(e) => setMonthlyReturnAmountWords(e.target.value)}
+                  className="qarza-inline-field w-40 sm:w-44 border-b border-emerald-500/70 font-urdu font-bold text-emerald-950 text-center bg-emerald-50/40 rounded-xs focus:outline-hidden"
+                />
+                <span>) </span>
               </strong>
               <span>باقاعدگی سے کمیٹی کو واپس کریں، یہاں تک کہ قرض کی مکمل رقم ادا ہو جائے۔</span>
             </div>
@@ -790,9 +898,9 @@ export const QarzaModal: React.FC<QarzaModalProps> = ({
                   className="qarza-field-input font-urdu font-bold text-slate-800 border-b-2 border-slate-400 focus:outline-hidden focus:border-emerald-600 min-w-[150px] sm:min-w-[180px] bg-slate-50/70 rounded-xs"
                 />
                 <span>، اقرار کرتا/کرتی ہوں کہ میں نے عمرہ کمیٹی سے </span>
-                <strong className="text-emerald-950 font-black">20,000 روپے</strong>
+                <strong className="text-emerald-950 font-black">{Number(loanAmount || 0).toLocaleString()} روپے</strong>
                 <span> بطور قرضِ حسنہ وصول کیے ہیں اور کمیٹی کے طے شدہ اصول کے مطابق ہر ماہ </span>
-                <strong className="text-emerald-950 font-black">10,000 روپے</strong>
+                <strong className="text-emerald-950 font-black">{Number(monthlyReturnAmount || 0).toLocaleString()} روپے</strong>
                 <span> واپس کرنے کا پابند ہوں۔</span>
               </div>
 
