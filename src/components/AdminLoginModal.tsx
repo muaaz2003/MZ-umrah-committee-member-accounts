@@ -19,14 +19,12 @@ interface AdminLoginModalProps {
   onSuccess: () => void;
 }
 
-export const SUPER_ADMIN_EMAIL = 'hafizmadni2003@gmail.com';
-
 export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
 }) => {
-  const [email, setEmail] = useState(SUPER_ADMIN_EMAIL);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +35,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     if (isOpen) {
       setError(null);
       setPassword('');
-      setEmail(SUPER_ADMIN_EMAIL);
+      setEmail('');
       const originalOverflow = document.body.style.overflow;
       const originalTouchAction = document.body.style.touchAction;
       document.body.style.overflow = 'hidden';
@@ -156,12 +154,13 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                 <input
                   type="email"
                   required
+                  autoComplete="off"
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
                     setError(null);
                   }}
-                  placeholder="hafizmadni2003@gmail.com"
+                  placeholder="ایڈمن ای میل درج کریں (Enter Admin Email)"
                   className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-900 focus:bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 focus:outline-hidden transition-all"
                 />
               </div>
